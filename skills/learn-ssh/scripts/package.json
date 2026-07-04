@@ -1,0 +1,12 @@
+{
+  "name": "learn-ssh-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ssh-node-ops": "./ssh-node-ops.mjs"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0"
+  }
+}

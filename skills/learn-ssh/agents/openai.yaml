@@ -1,0 +1,4 @@
+interface:
+  display_name: "LearnSSH"
+  short_description: "Alias-based SSH operations with isolated secrets"
+  default_prompt: "Use $learn-ssh to list SSH aliases and run a command by alias."

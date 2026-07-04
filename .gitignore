@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+dist/
+
+# Local/generated configuration files.
+config*.yaml
+
+# Local reference material that is not part of the LearnSSH release.
+参考项目/
+skills/ssh-node-ops/
