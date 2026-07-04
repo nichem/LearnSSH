@@ -17,17 +17,21 @@ Read this in Chinese: [README_CN.md](README_CN.md)
 
 ## Install Into Codex
 
-Copy the skill folder into your Codex skills directory:
+Run:
 
 ```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/learn-ssh "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh"
-npm install --prefix "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts"
+npx --yes github:LearnAIHubC/LearnSSH
 ```
 
-The Codex skill name is `learn-ssh`. The UI display name is `LearnSSH`.
+Then restart Codex and use `$learn-ssh`.
 
-After installing, start a new Codex thread or restart Codex if the skill list does not refresh immediately.
+To update an existing installation:
+
+```bash
+npx --yes github:LearnAIHubC/LearnSSH --force
+```
+
+The installer copies the skill into `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh` and installs its Node.js dependencies. The Codex skill name is `learn-ssh`. The UI display name is `LearnSSH`.
 
 ## First-Time Setup
 
@@ -120,13 +124,15 @@ Secrets are not accepted as flags. Credentials are prompted in the terminal and 
 ## Project Layout
 
 ```text
+bin/install.mjs
+package.json
 skills/learn-ssh/
-├── SKILL.md
-├── agents/openai.yaml
-└── scripts/
-    ├── package.json
-    ├── package-lock.json
-    └── ssh-node-ops.mjs
+|-- SKILL.md
+|-- agents/openai.yaml
+`-- scripts/
+    |-- package.json
+    |-- package-lock.json
+    `-- ssh-node-ops.mjs
 ```
 
 ## Validation
@@ -145,14 +151,10 @@ node --check skills/learn-ssh/scripts/ssh-node-ops.mjs
 
 ## Packaging
 
-Create a source package without local credentials or `node_modules`:
+Preview the npm package contents:
 
 ```bash
-mkdir -p dist
-tar --exclude='node_modules' \
-  --exclude='.DS_Store' \
-  -czf dist/LearnSSH-1.0.0.tar.gz \
-  README.md README_CN.md LICENSE .gitignore skills/learn-ssh
+npm pack --dry-run
 ```
 
 ## License

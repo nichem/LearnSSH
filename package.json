@@ -1,0 +1,39 @@
+{
+  "name": "@learnaihubc/learn-ssh",
+  "version": "1.0.0",
+  "description": "Codex skill for alias-based SSH server operations.",
+  "bin": {
+    "learn-ssh": "bin/install.mjs"
+  },
+  "files": [
+    "README.md",
+    "README_CN.md",
+    "LICENSE",
+    "bin",
+    "skills/learn-ssh"
+  ],
+  "keywords": [
+    "codex",
+    "skill",
+    "ssh",
+    "sftp",
+    "tunnel",
+    "server"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LearnAIHubC/LearnSSH.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LearnAIHubC/LearnSSH/issues"
+  },
+  "homepage": "https://github.com/LearnAIHubC/LearnSSH#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

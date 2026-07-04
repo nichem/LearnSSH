@@ -19,7 +19,15 @@ Use the bundled Node.js CLI for every SSH operation. The model must only work wi
 
 ## Install
 
-From this skill directory:
+Preferred install command:
+
+```bash
+npx --yes github:LearnAIHubC/LearnSSH
+```
+
+The installer copies the skill into the Codex skills directory and installs the Node.js dependencies.
+
+From a copied skill directory:
 
 ```bash
 npm install --prefix scripts

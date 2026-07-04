@@ -17,17 +17,21 @@ English version: [README.md](README.md)
 
 ## 安装到 Codex
 
-把 skill 目录复制到 Codex skills 目录：
+运行：
 
 ```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/learn-ssh "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh"
-npm install --prefix "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts"
+npx --yes github:LearnAIHubC/LearnSSH
 ```
 
-Codex 内部 skill 名是 `learn-ssh`，界面显示名是 `LearnSSH`。
+然后重启 Codex，使用 `$learn-ssh`。
 
-安装后，如果 Codex 没有立刻刷新 skill 列表，开一个新线程或重启 Codex。
+更新已有安装时运行：
+
+```bash
+npx --yes github:LearnAIHubC/LearnSSH --force
+```
+
+安装器会把 skill 复制到 `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`，并安装 Node.js 依赖。Codex 内部 skill 名是 `learn-ssh`，界面显示名是 `LearnSSH`。
 
 ## 首次配置
 
@@ -120,13 +124,15 @@ CLI 本身仍会在本地硬拦截 `rm -rf /` 这类根目录强删命令，并�
 ## 项目结构
 
 ```text
+bin/install.mjs
+package.json
 skills/learn-ssh/
-├── SKILL.md
-├── agents/openai.yaml
-└── scripts/
-    ├── package.json
-    ├── package-lock.json
-    └── ssh-node-ops.mjs
+|-- SKILL.md
+|-- agents/openai.yaml
+`-- scripts/
+    |-- package.json
+    |-- package-lock.json
+    `-- ssh-node-ops.mjs
 ```
 
 ## 验证
@@ -145,14 +151,10 @@ node --check skills/learn-ssh/scripts/ssh-node-ops.mjs
 
 ## 打包
 
-创建不包含本地凭据或 `node_modules` 的源码包：
+预览 npm 包内容：
 
 ```bash
-mkdir -p dist
-tar --exclude='node_modules' \
-  --exclude='.DS_Store' \
-  -czf dist/LearnSSH-1.0.0.tar.gz \
-  README.md README_CN.md LICENSE .gitignore skills/learn-ssh
+npm pack --dry-run
 ```
 
 ## 许可证
