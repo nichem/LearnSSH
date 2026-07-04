@@ -20,12 +20,13 @@ Usage:
 Options:
   --force          Replace an existing LearnSSH skill installation
   --dest <dir>     Install into a custom skills directory
+  --no-bin         Do not create the learn-ssh launcher
   --help           Show this help
 `);
 }
 
 function parseArgs(argv) {
-  const opts = { force: false };
+  const opts = { force: false, bin: true };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -34,6 +35,10 @@ function parseArgs(argv) {
     }
     if (arg === "--force") {
       opts.force = true;
+      continue;
+    }
+    if (arg === "--no-bin") {
+      opts.bin = false;
       continue;
     }
     if (arg === "--dest") {
@@ -52,6 +57,10 @@ function codexHome() {
 
 function defaultSkillsDir() {
   return path.join(codexHome(), "skills");
+}
+
+function defaultBinDir(skillsDir) {
+  return path.join(path.dirname(skillsDir), "bin");
 }
 
 function ensurePackageLooksLikeSkill() {
@@ -95,6 +104,37 @@ function installDependencies(dest) {
   }
 }
 
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function writeLauncher(skillsDir, dest) {
+  const binDir = defaultBinDir(skillsDir);
+  const launcher = path.join(binDir, "learn-ssh");
+  const target = path.join(dest, "scripts", "ssh-node-ops.mjs");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(launcher, `#!/bin/sh
+exec node ${shQuote(target)} "$@"
+`);
+  fs.chmodSync(launcher, 0o755);
+
+  if (process.platform === "win32") {
+    const cmdLauncher = path.join(binDir, "learn-ssh.cmd");
+    fs.writeFileSync(cmdLauncher, `@echo off\r\nnode "${target}" %*\r\n`);
+    return cmdLauncher;
+  }
+
+  return launcher;
+}
+
+function pathContains(dir) {
+  const resolved = path.resolve(dir);
+  return String(process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((entry) => path.resolve(entry) === resolved);
+}
+
 function install(opts) {
   ensurePackageLooksLikeSkill();
   const skillsDir = path.resolve(opts.dest || defaultSkillsDir());
@@ -121,8 +161,18 @@ function install(opts) {
     copyFromRoot(name, dest);
   }
   installDependencies(dest);
+  const launcher = opts.bin ? writeLauncher(skillsDir, dest) : null;
 
   console.log(`LearnSSH installed to ${dest}`);
+  if (launcher) {
+    console.log(`Launcher installed to ${launcher}`);
+    if (pathContains(path.dirname(launcher))) {
+      console.log("Run: learn-ssh list");
+    } else {
+      console.log(`Run: ${launcher} list`);
+      console.log(`Optional: add ${path.dirname(launcher)} to PATH to use learn-ssh directly.`);
+    }
+  }
   console.log("Restart Codex, then use $learn-ssh for SSH server operations.");
 }
 

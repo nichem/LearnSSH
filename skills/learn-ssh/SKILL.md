@@ -26,6 +26,9 @@ npx --yes github:LearnAIHubC/LearnSSH
 ```
 
 The installer copies the skill into the Codex skills directory and installs the Node.js dependencies.
+It also creates a launcher at `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`.
+If installed with `--dest`, use the launcher path printed by the installer.
+When running commands, use `LEARN_SSH="${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh"` unless `learn-ssh` is already on `PATH`.
 
 From a copied skill directory:
 
@@ -40,8 +43,8 @@ On macOS, `init` stores the encryption master key in Keychain. On other platform
 
 When the skill is first used, guide the user through configuration. The user must run setup commands in their own terminal; the model may only provide commands and then operate on aliases after setup is complete.
 
-1. Install dependencies with `npm install --prefix <skill>/scripts`.
-2. Initialize secure storage with `node <skill>/scripts/ssh-node-ops.mjs init`.
+1. Install dependencies with `npm install --prefix <skill>/scripts`, or use the installer to create `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`.
+2. Initialize secure storage with `$LEARN_SSH init`.
 3. Add one alias per server in the user's terminal. The user types secrets only into the terminal prompt.
 4. Confirm aliases with `list`, then use aliases for all later operations.
 
@@ -50,7 +53,7 @@ Aliases may use Unicode letters or digits, including Chinese names, plus `.`, `_
 Password server:
 
 ```bash
-node scripts/ssh-node-ops.mjs add --alias prod-web-1 --host 203.0.113.10 --user root --auth password --description "production web"
+$LEARN_SSH add --alias prod-web-1 --host 203.0.113.10 --user root --auth password --description "production web"
 ```
 
 `--auth password` means password authentication mode. It is not the SSH password value. The real password is typed only into the hidden terminal prompt and may contain Unicode characters, spaces, and symbols except a newline.
@@ -58,19 +61,19 @@ node scripts/ssh-node-ops.mjs add --alias prod-web-1 --host 203.0.113.10 --user 
 Embedded encrypted private key:
 
 ```bash
-node scripts/ssh-node-ops.mjs add --alias prod-db-1 --host 203.0.113.20 --user ubuntu --auth key --key-path ~/.ssh/id_ed25519 --embed-key --ask-passphrase
+$LEARN_SSH add --alias prod-db-1 --host 203.0.113.20 --user ubuntu --auth key --key-path ~/.ssh/id_ed25519 --embed-key --ask-passphrase
 ```
 
 SSH agent server:
 
 ```bash
-node scripts/ssh-node-ops.mjs add --alias bastion --host bastion.example.com --user ops --auth agent
+$LEARN_SSH add --alias bastion --host bastion.example.com --user ops --auth agent
 ```
 
 Jump host:
 
 ```bash
-node scripts/ssh-node-ops.mjs add --alias internal-api --host 10.0.1.15 --user app --auth key --key-path ~/.ssh/id_ed25519 --proxy-jump bastion
+$LEARN_SSH add --alias internal-api --host 10.0.1.15 --user app --auth key --key-path ~/.ssh/id_ed25519 --proxy-jump bastion
 ```
 
 ## Operations
@@ -78,19 +81,19 @@ node scripts/ssh-node-ops.mjs add --alias internal-api --host 10.0.1.15 --user a
 List aliases:
 
 ```bash
-node scripts/ssh-node-ops.mjs list
+$LEARN_SSH list
 ```
 
 Show one alias without secrets:
 
 ```bash
-node scripts/ssh-node-ops.mjs show prod-web-1
+$LEARN_SSH show prod-web-1
 ```
 
 Execute a command:
 
 ```bash
-node scripts/ssh-node-ops.mjs exec prod-web-1 -- "hostname && uptime && df -h"
+$LEARN_SSH exec prod-web-1 -- "hostname && uptime && df -h"
 ```
 
 `exec` uses a per-alias local daemon by default. If an SSH connection for that alias is already open and has been active within the idle timeout, the CLI reuses it. If no reusable daemon exists, the CLI starts one automatically. The daemon exits after 60 minutes without commands by default. The CLI hard-blocks `rm -rf /` style root deletion; other risky remote commands rely on the host tool permission flow.
@@ -98,7 +101,7 @@ node scripts/ssh-node-ops.mjs exec prod-web-1 -- "hostname && uptime && df -h"
 For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables:
 
 ```bash
-node scripts/ssh-node-ops.mjs exec prod-web-1 --stdin <<'EOF'
+$LEARN_SSH exec prod-web-1 --stdin <<'EOF'
 set -o pipefail
 . /etc/os-release
 echo "$PRETTY_NAME"
@@ -110,40 +113,40 @@ EOF
 Daemon management:
 
 ```bash
-node scripts/ssh-node-ops.mjs daemon status
-node scripts/ssh-node-ops.mjs daemon status prod-web-1
-node scripts/ssh-node-ops.mjs daemon stop prod-web-1
-node scripts/ssh-node-ops.mjs exec prod-web-1 --no-daemon -- "hostname"
+$LEARN_SSH daemon status
+$LEARN_SSH daemon status prod-web-1
+$LEARN_SSH daemon stop prod-web-1
+$LEARN_SSH exec prod-web-1 --no-daemon -- "hostname"
 ```
 
 Upload a file:
 
 ```bash
-node scripts/ssh-node-ops.mjs upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+$LEARN_SSH upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
 ```
 
 Download a file:
 
 ```bash
-node scripts/ssh-node-ops.mjs download prod-web-1 /var/log/syslog ./syslog
+$LEARN_SSH download prod-web-1 /var/log/syslog ./syslog
 ```
 
 Start a local tunnel:
 
 ```bash
-node scripts/ssh-node-ops.mjs tunnel prod-db-1 --local-port 15432 --remote-host 127.0.0.1 --remote-port 5432
+$LEARN_SSH tunnel prod-db-1 --local-port 15432 --remote-host 127.0.0.1 --remote-port 5432
 ```
 
 Tunnels close automatically after 60 minutes without local connections or transferred data. Override with `--idle-timeout <seconds>`, or use `--idle-timeout 0` to disable automatic idle closure:
 
 ```bash
-node scripts/ssh-node-ops.mjs tunnel prod-db-1 --local-port 15432 --remote-port 5432 --idle-timeout 1800
+$LEARN_SSH tunnel prod-db-1 --local-port 15432 --remote-port 5432 --idle-timeout 1800
 ```
 
 Remove an alias and its encrypted secret:
 
 ```bash
-node scripts/ssh-node-ops.mjs remove prod-web-1
+$LEARN_SSH remove prod-web-1
 ```
 
 ## Output
@@ -151,8 +154,8 @@ node scripts/ssh-node-ops.mjs remove prod-web-1
 The CLI prints concise human-readable output by default. Add `--json` when automation needs structured data:
 
 ```bash
-node scripts/ssh-node-ops.mjs list --json
-node scripts/ssh-node-ops.mjs exec prod-web-1 --json -- "hostname"
+$LEARN_SSH list --json
+$LEARN_SSH exec prod-web-1 --json -- "hostname"
 ```
 
 For `exec` JSON output, inspect:

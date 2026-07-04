@@ -31,20 +31,20 @@ npx --yes github:LearnAIHubC/LearnSSH
 npx --yes github:LearnAIHubC/LearnSSH --force
 ```
 
-安装器会把 skill 复制到 `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`，并安装 Node.js 依赖。Codex 内部 skill 名是 `learn-ssh`，界面显示名是 `LearnSSH`。
+安装器会把 skill 复制到 `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`，安装 Node.js 依赖，并创建 `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh` 启动器。如果你想直接运行 `learn-ssh`，把这个 `bin` 目录加入 `PATH`。如果使用 `--dest` 自定义安装目录，以安装器输出的 launcher 路径为准。Codex 内部 skill 名是 `learn-ssh`，界面显示名是 `LearnSSH`。
 
 ## 首次配置
 
 初始化本地加密存储：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" init
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" init
 ```
 
 添加一个密码登录的服务器别名：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
   --alias prod-web-1 \
   --host 203.0.113.10 \
   --user root \
@@ -56,7 +56,7 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add
 添加一个私钥登录的服务器别名：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
   --alias prod-db-1 \
   --host 203.0.113.20 \
   --user ubuntu \
@@ -71,43 +71,43 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add
 列出别名：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" list
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" list
 ```
 
 查看一个别名，不显示敏感信息：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" show prod-web-1
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" show prod-web-1
 ```
 
 执行远程命令：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" exec prod-web-1 -- "hostname && uptime"
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 -- "hostname && uptime"
 ```
 
 输出 JSON：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" exec prod-web-1 --json -- "hostname"
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 --json -- "hostname"
 ```
 
 上传文件：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
 ```
 
 下载文件：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" download prod-web-1 /var/log/syslog ./syslog
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" download prod-web-1 /var/log/syslog ./syslog
 ```
 
 启动本地隧道：
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" tunnel prod-db-1 \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" tunnel prod-db-1 \
   --local-port 15432 \
   --remote-host 127.0.0.1 \
   --remote-port 5432

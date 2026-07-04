@@ -22,20 +22,20 @@ function usage() {
   return `ssh-node-ops
 
 Usage:
-  node scripts/ssh-node-ops.mjs init [--local-key]
-  node scripts/ssh-node-ops.mjs add --alias <name> --host <host> --user <user> --auth <password|key|agent> [options]
-  node scripts/ssh-node-ops.mjs list
-  node scripts/ssh-node-ops.mjs show <alias>
-  node scripts/ssh-node-ops.mjs remove <alias>
-  node scripts/ssh-node-ops.mjs exec <alias> -- <command>
-  node scripts/ssh-node-ops.mjs exec <alias> --stdin
-  node scripts/ssh-node-ops.mjs daemon start <alias>
-  node scripts/ssh-node-ops.mjs daemon status [alias]
-  node scripts/ssh-node-ops.mjs daemon stop <alias>
-  node scripts/ssh-node-ops.mjs upload <alias> <local-path> <remote-path>
-  node scripts/ssh-node-ops.mjs download <alias> <remote-path> <local-path>
-  node scripts/ssh-node-ops.mjs tunnel <alias> --local-port <port> --remote-port <port> [--remote-host <host>] [--idle-timeout <seconds>]
-  node scripts/ssh-node-ops.mjs paths
+  learn-ssh init [--local-key]
+  learn-ssh add --alias <name> --host <host> --user <user> --auth <password|key|agent> [options]
+  learn-ssh list
+  learn-ssh show <alias>
+  learn-ssh remove <alias>
+  learn-ssh exec <alias> -- <command>
+  learn-ssh exec <alias> --stdin
+  learn-ssh daemon start <alias>
+  learn-ssh daemon status [alias]
+  learn-ssh daemon stop <alias>
+  learn-ssh upload <alias> <local-path> <remote-path>
+  learn-ssh download <alias> <remote-path> <local-path>
+  learn-ssh tunnel <alias> --local-port <port> --remote-port <port> [--remote-host <host>] [--idle-timeout <seconds>]
+  learn-ssh paths
 
 Add options:
   --port <port>             Default: 22
@@ -495,7 +495,7 @@ function getMasterKey({ create = false, forceLocal = false } = {}) {
   }
 
   if (!create) {
-    throw new Error(`Secure storage is not initialized. Run: node ${path.join(SCRIPT_DIR, 'ssh-node-ops.mjs')} init`);
+    throw new Error('Secure storage is not initialized. Run: learn-ssh init');
   }
 
   const value = crypto.randomBytes(32).toString('base64');

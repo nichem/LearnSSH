@@ -31,20 +31,20 @@ To update an existing installation:
 npx --yes github:LearnAIHubC/LearnSSH --force
 ```
 
-The installer copies the skill into `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh` and installs its Node.js dependencies. The Codex skill name is `learn-ssh`. The UI display name is `LearnSSH`.
+The installer copies the skill into `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`, installs its Node.js dependencies, and creates a launcher at `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`. Add that `bin` directory to `PATH` if you want to run `learn-ssh` without the full path. If you install with `--dest`, use the launcher path printed by the installer. The Codex skill name is `learn-ssh`. The UI display name is `LearnSSH`.
 
 ## First-Time Setup
 
 Initialize local encrypted storage:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" init
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" init
 ```
 
 Add a password-based server alias:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
   --alias prod-web-1 \
   --host 203.0.113.10 \
   --user root \
@@ -56,7 +56,7 @@ The real SSH password is typed only into the hidden terminal prompt. Do not pass
 Add a key-based server alias:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
   --alias prod-db-1 \
   --host 203.0.113.20 \
   --user ubuntu \
@@ -71,43 +71,43 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" add
 List aliases:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" list
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" list
 ```
 
 Show one alias without secrets:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" show prod-web-1
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" show prod-web-1
 ```
 
 Run a remote command:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" exec prod-web-1 -- "hostname && uptime"
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 -- "hostname && uptime"
 ```
 
 Get JSON output:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" exec prod-web-1 --json -- "hostname"
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 --json -- "hostname"
 ```
 
 Upload a file:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
 ```
 
 Download a file:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" download prod-web-1 /var/log/syslog ./syslog
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" download prod-web-1 /var/log/syslog ./syslog
 ```
 
 Start a local tunnel:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh/scripts/ssh-node-ops.mjs" tunnel prod-db-1 \
+"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" tunnel prod-db-1 \
   --local-port 15432 \
   --remote-host 127.0.0.1 \
   --remote-port 5432
