@@ -157,6 +157,10 @@ Preview the npm package contents:
 npm pack --dry-run
 ```
 
+## Friendly Links
+
+- [LINUX DO](https://linux.do/) - A new ideal community and gathering place for technology enthusiasts.
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).

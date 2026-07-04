@@ -157,6 +157,10 @@ node --check skills/learn-ssh/scripts/ssh-node-ops.mjs
 npm pack --dry-run
 ```
 
+## 友情链接
+
+- [LINUX DO](https://linux.do/) —— 新的理想型社区，技术爱好者的聚集地。
+
 ## 许可证
 
 MIT License。见 [LICENSE](LICENSE)。
