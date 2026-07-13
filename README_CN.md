@@ -8,43 +8,54 @@ English version: [README.md](README.md)
 
 - 使用服务器别名，避免在对话里反复写 `user@host`。
 - SSH 密码、私钥、passphrase 不进入聊天内容。
-- 敏感信息加密保存在 `~/.codex/ssh-node-ops`。
+- 敏感信息按项目加密保存在 `./.learn-ssh/`。
 - 执行远程命令，并支持按别名复用 SSH 连接。
 - 通过 SFTP 上传和下载文件。
 - 启动本地 SSH 隧道。
 - 默认输出简洁的人类可读结果，使用 `--json` 输出结构化 JSON。
 - 在建立 SSH 连接前硬拦截 `rm -rf /` 这类根目录强删命令。
 
-## 安装到 Codex
+## 安装
 
-运行：
+在项目根目录运行：
 
 ```bash
-npx --yes github:LearnAIHubC/LearnSSH
+npx --yes github:nichem/LearnSSH
 ```
 
-然后重启 Codex，使用 `$learn-ssh`。
+这会把 skill 装到项目级目录，同时支持 **Codex**、**Claude Code** 和 **opencode** 三个 agent：
+- `.codex/skills/learn-ssh/`
+- `.claude/skills/learn-ssh/`
+- `.opencode/skills/learn-ssh/`
+
+启动器创建在 `./.learn-ssh/bin/learn-ssh`。然后重启 agent，使用 `$learn-ssh`。
 
 更新已有安装时运行：
 
 ```bash
-npx --yes github:LearnAIHubC/LearnSSH --force
+npx --yes github:nichem/LearnSSH --force
 ```
 
-安装器会把 skill 复制到 `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`，安装 Node.js 依赖，并创建 `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh` 启动器。如果你想直接运行 `learn-ssh`，把这个 `bin` 目录加入 `PATH`。如果使用 `--dest` 自定义安装目录，以安装器输出的 launcher 路径为准。Codex 内部 skill 名是 `learn-ssh`，界面显示名是 `LearnSSH`。
+只装部分 agent：
+
+```bash
+npx --yes github:nichem/LearnSSH --agents codex,claude
+```
 
 ## 首次配置
 
-初始化本地加密存储：
+初始化项目级加密存储(在项目根目录运行)：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" init
+./.learn-ssh/bin/learn-ssh init
 ```
+
+这会在当前目录创建 `./.learn-ssh/`，并自动将其加入 `.gitignore`。可通过 `LEARN_SSH_HOME=/path/to/dir` 覆盖存储位置。
 
 添加一个密码登录的服务器别名：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
+./.learn-ssh/bin/learn-ssh add \
   --alias prod-web-1 \
   --host 203.0.113.10 \
   --user root \
@@ -56,7 +67,7 @@ npx --yes github:LearnAIHubC/LearnSSH --force
 添加一个私钥登录的服务器别名：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
+./.learn-ssh/bin/learn-ssh add \
   --alias prod-db-1 \
   --host 203.0.113.20 \
   --user ubuntu \
@@ -71,43 +82,43 @@ npx --yes github:LearnAIHubC/LearnSSH --force
 列出别名：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" list
+./.learn-ssh/bin/learn-ssh list
 ```
 
 查看一个别名，不显示敏感信息：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" show prod-web-1
+./.learn-ssh/bin/learn-ssh show prod-web-1
 ```
 
 执行远程命令：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 -- "hostname && uptime"
+./.learn-ssh/bin/learn-ssh exec prod-web-1 -- "hostname && uptime"
 ```
 
 输出 JSON：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 --json -- "hostname"
+./.learn-ssh/bin/learn-ssh exec prod-web-1 --json -- "hostname"
 ```
 
 上传文件：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+./.learn-ssh/bin/learn-ssh upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
 ```
 
 下载文件：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" download prod-web-1 /var/log/syslog ./syslog
+./.learn-ssh/bin/learn-ssh download prod-web-1 /var/log/syslog ./syslog
 ```
 
 启动本地隧道：
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" tunnel prod-db-1 \
+./.learn-ssh/bin/learn-ssh tunnel prod-db-1 \
   --local-port 15432 \
   --remote-host 127.0.0.1 \
   --remote-port 5432

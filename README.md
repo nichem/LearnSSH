@@ -8,43 +8,54 @@ Read this in Chinese: [README_CN.md](README_CN.md)
 
 - Manage SSH servers by alias instead of raw `user@host` strings.
 - Store SSH passwords, private keys, and passphrases outside chat.
-- Encrypt secrets under `~/.codex/ssh-node-ops`.
+- Encrypt secrets per-project under `./.learn-ssh/`.
 - Run remote commands with optional per-alias connection reuse.
 - Upload and download files through SFTP.
 - Start local SSH tunnels.
 - Print concise human-readable output by default, or JSON with `--json`.
 - Hard-block `rm -rf /` style root deletion before connecting.
 
-## Install Into Codex
+## Install
 
-Run:
+Run from your project root:
 
 ```bash
-npx --yes github:LearnAIHubC/LearnSSH
+npx --yes github:nichem/LearnSSH
 ```
 
-Then restart Codex and use `$learn-ssh`.
+This installs the skill into project-level directories for **Codex**, **Claude Code**, and **opencode**:
+- `.codex/skills/learn-ssh/`
+- `.claude/skills/learn-ssh/`
+- `.opencode/skills/learn-ssh/`
+
+A launcher is created at `./.learn-ssh/bin/learn-ssh`. Then restart your agent and use `$learn-ssh`.
 
 To update an existing installation:
 
 ```bash
-npx --yes github:LearnAIHubC/LearnSSH --force
+npx --yes github:nichem/LearnSSH --force
 ```
 
-The installer copies the skill into `${CODEX_HOME:-$HOME/.codex}/skills/learn-ssh`, installs its Node.js dependencies, and creates a launcher at `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`. Add that `bin` directory to `PATH` if you want to run `learn-ssh` without the full path. If you install with `--dest`, use the launcher path printed by the installer. The Codex skill name is `learn-ssh`. The UI display name is `LearnSSH`.
+To install for a subset of agents:
+
+```bash
+npx --yes github:nichem/LearnSSH --agents codex,claude
+```
 
 ## First-Time Setup
 
-Initialize local encrypted storage:
+Initialize project-local encrypted storage (run from your project root):
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" init
+./.learn-ssh/bin/learn-ssh init
 ```
+
+This creates `./.learn-ssh/` in the current directory and automatically adds it to `.gitignore`. Override the storage location with `LEARN_SSH_HOME=/path/to/dir`.
 
 Add a password-based server alias:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
+./.learn-ssh/bin/learn-ssh add \
   --alias prod-web-1 \
   --host 203.0.113.10 \
   --user root \
@@ -56,7 +67,7 @@ The real SSH password is typed only into the hidden terminal prompt. Do not pass
 Add a key-based server alias:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" add \
+./.learn-ssh/bin/learn-ssh add \
   --alias prod-db-1 \
   --host 203.0.113.20 \
   --user ubuntu \
@@ -71,43 +82,43 @@ Add a key-based server alias:
 List aliases:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" list
+./.learn-ssh/bin/learn-ssh list
 ```
 
 Show one alias without secrets:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" show prod-web-1
+./.learn-ssh/bin/learn-ssh show prod-web-1
 ```
 
 Run a remote command:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 -- "hostname && uptime"
+./.learn-ssh/bin/learn-ssh exec prod-web-1 -- "hostname && uptime"
 ```
 
 Get JSON output:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" exec prod-web-1 --json -- "hostname"
+./.learn-ssh/bin/learn-ssh exec prod-web-1 --json -- "hostname"
 ```
 
 Upload a file:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+./.learn-ssh/bin/learn-ssh upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
 ```
 
 Download a file:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" download prod-web-1 /var/log/syslog ./syslog
+./.learn-ssh/bin/learn-ssh download prod-web-1 /var/log/syslog ./syslog
 ```
 
 Start a local tunnel:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh" tunnel prod-db-1 \
+./.learn-ssh/bin/learn-ssh tunnel prod-db-1 \
   --local-port 15432 \
   --remote-host 127.0.0.1 \
   --remote-port 5432

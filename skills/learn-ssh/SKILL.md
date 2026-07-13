@@ -11,7 +11,7 @@ Use the bundled Node.js CLI for every SSH operation. The model must only work wi
 
 - Never run raw `ssh`, `scp`, or `sftp` for managed servers.
 - Never ask the user to paste passwords, private keys, or passphrases into chat.
-- Never read or print `~/.codex/ssh-node-ops/vault.json`, `master.key`, `daemon-*.json`, private key files, or other secret-bearing files.
+- Never read or print `.learn-ssh/vault.json`, `master.key`, `daemon-*.json`, private key files, or other secret-bearing files.
 - Never pass secrets as command-line flags. The CLI prompts the user in the terminal and encrypts secrets before writing them.
 - Never run `init`, `add`, or `add --update` for the user when the command may prompt for a password, private key passphrase, or other secret. Show the command and ask the user to run it in their own terminal.
 - Always connect by alias. Do not connect by raw `user@host`, IP, or hostname after a server is configured.
@@ -19,34 +19,42 @@ Use the bundled Node.js CLI for every SSH operation. The model must only work wi
 
 ## Install
 
-Preferred install command:
+Preferred install command (run from your project root):
 
 ```bash
-npx --yes github:LearnAIHubC/LearnSSH
+npx --yes github:nichem/LearnSSH
 ```
 
-The installer copies the skill into the Codex skills directory and installs the Node.js dependencies.
-It also creates a launcher at `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`.
-If installed with `--dest`, use the launcher path printed by the installer.
-When running commands, use `LEARN_SSH="${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh"` unless `learn-ssh` is already on `PATH`.
+The installer copies the skill into **project-level** directories for three agents:
+- `.codex/skills/learn-ssh/`
+- `.claude/skills/learn-ssh/`
+- `.opencode/skills/learn-ssh/`
 
-From a copied skill directory:
+It also installs Node.js dependencies and creates a launcher at `./.learn-ssh/bin/learn-ssh`.
+Use `--agents codex,claude` to install for a subset. Use `--force` to replace an existing install.
+
+When running commands, use `LEARN_SSH="./.learn-ssh/bin/learn-ssh"` unless `learn-ssh` is already on `PATH`.
+
+The installer installs the CLI and its Node.js dependencies under `./.learn-ssh/scripts/`. If you skip the launcher with `--no-bin`, invoke the CLI directly by path:
 
 ```bash
-npm install --prefix scripts
-node scripts/ssh-node-ops.mjs init
+node ./.learn-ssh/scripts/ssh-node-ops.mjs init
 ```
 
-On macOS, `init` stores the encryption master key in Keychain. On other platforms it falls back to a mode-600 local key file unless the user provides another key through `SSH_NODE_OPS_MASTER_KEY`.
+LearnSSH stores all data **per-project** under `./.learn-ssh/` in the current working directory. Override the storage location with the `LEARN_SSH_HOME` environment variable. `init` automatically adds `.learn-ssh/` to the project `.gitignore`.
+
+On macOS, `init` stores the encryption master key in Keychain (scoped per project). On other platforms it falls back to a mode-600 local key file unless the user provides another key through `SSH_NODE_OPS_MASTER_KEY`.
 
 ## Configuration Workflow
 
 When the skill is first used, guide the user through configuration. The user must run setup commands in their own terminal; the model may only provide commands and then operate on aliases after setup is complete.
 
-1. Install dependencies with `npm install --prefix <skill>/scripts`, or use the installer to create `${CODEX_HOME:-$HOME/.codex}/bin/learn-ssh`.
-2. Initialize secure storage with `$LEARN_SSH init`.
+1. Run `npx --yes github:nichem/LearnSSH` in the project root to install the skill for all agents.
+2. Initialize secure storage with `$LEARN_SSH init`. This creates `./.learn-ssh/` and adds it to `.gitignore`.
 3. Add one alias per server in the user's terminal. The user types secrets only into the terminal prompt.
 4. Confirm aliases with `list`, then use aliases for all later operations.
+
+All commands resolve storage from the current working directory, so always run LearnSSH commands from the project root. Override with `LEARN_SSH_HOME=/path/to/dir` if needed.
 
 Aliases may use Unicode letters or digits, including Chinese names, plus `.`, `_`, and `-`. Avoid spaces and slashes in aliases.
 
@@ -172,10 +180,10 @@ If `success` is false, report the error without exposing connection parameters o
 
 `add` writes sensitive values only after encryption. Later operations decrypt inside the Node process and pass values directly to `ssh2`; decrypted values are not printed.
 
-Default storage:
+Default storage (per-project, under `./.learn-ssh/`):
 
-- Non-secret aliases: `~/.codex/ssh-node-ops/config.json`
-- Encrypted secrets: `~/.codex/ssh-node-ops/vault.json`
-- Master key: macOS Keychain by default; local `master.key` fallback is mode 600
+- Non-secret aliases: `./.learn-ssh/config.json`
+- Encrypted secrets: `./.learn-ssh/vault.json`
+- Master key: macOS Keychain by default (scoped per project); local `master.key` fallback is mode 600
 
 For the strongest private-key isolation, use `--embed-key` so the key content is encrypted into `vault.json` and the alias does not need to expose a reusable key path.

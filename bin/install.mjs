@@ -2,7 +2,6 @@
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,22 +10,37 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(dirname, "..");
 const sourceSkillRoot = path.join(packageRoot, "skills", SKILL_NAME);
 
+const AGENT_DIRS = [
+  { dir: ".codex", label: "Codex", needsAgentsYaml: true },
+  { dir: ".claude", label: "Claude Code", needsAgentsYaml: false },
+  { dir: ".opencode", label: "opencode", needsAgentsYaml: false },
+];
+
 function usage() {
-  console.log(`LearnSSH installer
+  console.log(`LearnSSH installer (project-local)
 
 Usage:
   npx @learnaihubc/learn-ssh [options]
 
+Installs the learn-ssh skill into project-level directories for Codex,
+Claude Code, and opencode:
+  .codex/skills/learn-ssh/
+  .claude/skills/learn-ssh/
+  .opencode/skills/learn-ssh/
+
+A launcher is created at .learn-ssh/bin/learn-ssh.
+
 Options:
   --force          Replace an existing LearnSSH skill installation
-  --dest <dir>     Install into a custom skills directory
   --no-bin         Do not create the learn-ssh launcher
+  --agents <list>  Comma-separated list of agents to install for
+                   (codex,claude,opencode). Default: all three.
   --help           Show this help
 `);
 }
 
 function parseArgs(argv) {
-  const opts = { force: false, bin: true };
+  const opts = { force: false, bin: true, agents: ["codex", "claude", "opencode"] };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -41,26 +55,18 @@ function parseArgs(argv) {
       opts.bin = false;
       continue;
     }
-    if (arg === "--dest") {
-      if (i + 1 >= argv.length) throw new Error("Missing value for --dest");
-      opts.dest = argv[++i];
+    if (arg === "--agents") {
+      if (i + 1 >= argv.length) throw new Error("Missing value for --agents");
+      opts.agents = argv[++i].split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
       continue;
     }
     throw new Error(`Unknown option: ${arg}`);
   }
+  const valid = ["codex", "claude", "opencode"];
+  for (const a of opts.agents) {
+    if (!valid.includes(a)) throw new Error(`Unknown agent: ${a}. Valid: ${valid.join(", ")}`);
+  }
   return opts;
-}
-
-function codexHome() {
-  return process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-}
-
-function defaultSkillsDir() {
-  return path.join(codexHome(), "skills");
-}
-
-function defaultBinDir(skillsDir) {
-  return path.join(path.dirname(skillsDir), "bin");
 }
 
 function ensurePackageLooksLikeSkill() {
@@ -77,26 +83,34 @@ function isLearnSshInstall(dir) {
   return /^name:\s*learn-ssh\s*$/m.test(body);
 }
 
-function copyFromRoot(name, destRoot) {
-  const src = path.join(packageRoot, name);
-  const dest = path.join(destRoot, name);
-  if (!fs.existsSync(src)) return;
-  fs.cpSync(src, dest, { recursive: true, force: true, verbatimSymlinks: false });
+function copySkillMetadata(destRoot, needsAgentsYaml) {
+  const skillMdSrc = path.join(sourceSkillRoot, "SKILL.md");
+  fs.cpSync(skillMdSrc, path.join(destRoot, "SKILL.md"), { force: true });
+  if (needsAgentsYaml) {
+    const agentsSrc = path.join(sourceSkillRoot, "agents");
+    if (fs.existsSync(agentsSrc)) {
+      fs.cpSync(agentsSrc, path.join(destRoot, "agents"), {
+        recursive: true,
+        force: true,
+        verbatimSymlinks: false,
+      });
+    }
+  }
 }
 
-function copyFromSkill(name, destRoot) {
-  const src = path.join(sourceSkillRoot, name);
-  const dest = path.join(destRoot, name);
-  if (!fs.existsSync(src)) return;
-  fs.cpSync(src, dest, { recursive: true, force: true, verbatimSymlinks: false });
-}
-
-function installDependencies(dest) {
-  const scriptsDir = path.join(dest, "scripts");
+function installDependencies(scriptsDir) {
+  if (!fs.existsSync(path.join(scriptsDir, "package.json"))) return;
   const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
+  // On Windows npm is a .cmd shim, so spawnSync needs shell: true. With a shell
+  // the args are joined into one command line without quoting, so a prefix path
+  // containing spaces (e.g. C:\Users\John Doe\proj) would be split. Quote it.
+  // Windows paths cannot contain a double-quote, so wrapping is safe.
+  const useShell = process.platform === "win32";
+  const prefixArg = useShell ? `"${scriptsDir}"` : scriptsDir;
   console.log("Installing LearnSSH Node dependencies...");
-  const result = spawnSync(npmBin, ["install", "--omit=dev", "--prefix", scriptsDir], {
+  const result = spawnSync(npmBin, ["install", "--omit=dev", "--prefix", prefixArg], {
     stdio: "inherit",
+    shell: useShell,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -108,11 +122,12 @@ function shQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
-function writeLauncher(skillsDir, dest) {
-  const binDir = defaultBinDir(skillsDir);
-  const launcher = path.join(binDir, "learn-ssh");
-  const target = path.join(dest, "scripts", "ssh-node-ops.mjs");
+function writeLauncher() {
+  const binDir = path.join(process.cwd(), ".learn-ssh", "bin");
+  const target = path.join(process.cwd(), ".learn-ssh", "scripts", "ssh-node-ops.mjs");
   fs.mkdirSync(binDir, { recursive: true });
+
+  const launcher = path.join(binDir, "learn-ssh");
   fs.writeFileSync(launcher, `#!/bin/sh
 exec node ${shQuote(target)} "$@"
 `);
@@ -127,53 +142,73 @@ exec node ${shQuote(target)} "$@"
   return launcher;
 }
 
-function pathContains(dir) {
-  const resolved = path.resolve(dir);
-  return String(process.env.PATH || "")
-    .split(path.delimiter)
-    .filter(Boolean)
-    .some((entry) => path.resolve(entry) === resolved);
+function ensureGitignoreEntry(projectRoot) {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const entry = ".learn-ssh/";
+  let existing = "";
+  if (fs.existsSync(gitignorePath)) {
+    existing = fs.readFileSync(gitignorePath, "utf8");
+  }
+  if (existing.includes(entry)) return;
+  const addition = existing && !existing.endsWith("\n") ? `\n${entry}\n` : `${entry}\n`;
+  fs.appendFileSync(gitignorePath, addition);
 }
 
 function install(opts) {
   ensurePackageLooksLikeSkill();
-  const skillsDir = path.resolve(opts.dest || defaultSkillsDir());
-  const dest = path.join(skillsDir, SKILL_NAME);
-  fs.mkdirSync(skillsDir, { recursive: true });
+  const projectRoot = process.cwd();
+  const learnSshDir = path.join(projectRoot, ".learn-ssh");
+  const scriptsDir = path.join(learnSshDir, "scripts");
 
-  if (fs.existsSync(dest)) {
-    if (!isLearnSshInstall(dest)) {
-      throw new Error(`Destination exists and does not look like LearnSSH: ${dest}`);
+  fs.mkdirSync(learnSshDir, { recursive: true });
+
+  const scriptsSrc = path.join(sourceSkillRoot, "scripts");
+  fs.cpSync(scriptsSrc, scriptsDir, { recursive: true, force: true, verbatimSymlinks: false });
+  installDependencies(scriptsDir);
+  console.log(`CLI installed to ${scriptsDir}`);
+
+  const installedAgents = [];
+  for (const agent of AGENT_DIRS) {
+    const agentKey = agent.dir.slice(1);
+    if (!opts.agents.includes(agentKey)) continue;
+
+    const skillsDir = path.join(projectRoot, agent.dir, "skills");
+    const dest = path.join(skillsDir, SKILL_NAME);
+    fs.mkdirSync(skillsDir, { recursive: true });
+
+    if (fs.existsSync(dest)) {
+      if (!isLearnSshInstall(dest)) {
+        throw new Error(`Destination exists and does not look like LearnSSH: ${dest}`);
+      }
+      if (!opts.force) {
+        console.log(`LearnSSH is already installed at ${dest} (${agent.label})`);
+        installedAgents.push({ ...agent, dest, skipped: true });
+        continue;
+      }
+      fs.rmSync(dest, { recursive: true, force: true });
     }
-    if (!opts.force) {
-      console.log(`LearnSSH is already installed at ${dest}`);
-      console.log("Run again with --force to replace it with this package version.");
-      return;
-    }
-    fs.rmSync(dest, { recursive: true, force: true });
+
+    fs.mkdirSync(dest, { recursive: true });
+    copySkillMetadata(dest, agent.needsAgentsYaml);
+    installedAgents.push({ ...agent, dest, skipped: false });
+    console.log(`Skill metadata installed to ${dest} (${agent.label})`);
   }
 
-  fs.mkdirSync(dest, { recursive: true });
-  for (const name of ["SKILL.md", "agents", "scripts"]) {
-    copyFromSkill(name, dest);
-  }
-  for (const name of ["README.md", "README_CN.md", "LICENSE"]) {
-    copyFromRoot(name, dest);
-  }
-  installDependencies(dest);
-  const launcher = opts.bin ? writeLauncher(skillsDir, dest) : null;
-
-  console.log(`LearnSSH installed to ${dest}`);
-  if (launcher) {
+  let launcher = null;
+  const activeAgents = installedAgents.filter((a) => !a.skipped);
+  if (opts.bin && activeAgents.length > 0) {
+    launcher = writeLauncher();
     console.log(`Launcher installed to ${launcher}`);
-    if (pathContains(path.dirname(launcher))) {
-      console.log("Run: learn-ssh list");
-    } else {
-      console.log(`Run: ${launcher} list`);
-      console.log(`Optional: add ${path.dirname(launcher)} to PATH to use learn-ssh directly.`);
-    }
+    console.log(`Run: ${launcher} list`);
   }
-  console.log("Restart Codex, then use $learn-ssh for SSH server operations.");
+
+  ensureGitignoreEntry(projectRoot);
+  console.log(`Added .learn-ssh/ to ${path.join(projectRoot, ".gitignore")}`);
+
+  const agentNames = installedAgents.map((a) => a.label).join(", ");
+  console.log(`\nDone. Skill installed for: ${agentNames}.`);
+  console.log("Restart your agent(s), then use $learn-ssh for SSH server operations.");
+  console.log("Run `$LEARN_SSH init` in the project to initialize encrypted storage.");
 }
 
 try {

@@ -22,12 +22,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LearnAIHubC/LearnSSH.git"
+    "url": "git+https://github.com/nichem/LearnSSH.git"
   },
   "bugs": {
-    "url": "https://github.com/LearnAIHubC/LearnSSH/issues"
+    "url": "https://github.com/nichem/LearnSSH/issues"
   },
-  "homepage": "https://github.com/LearnAIHubC/LearnSSH#readme",
+  "homepage": "https://github.com/nichem/LearnSSH#readme",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
