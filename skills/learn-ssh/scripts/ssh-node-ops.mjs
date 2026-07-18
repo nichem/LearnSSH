@@ -1029,37 +1029,53 @@ function quoteWindowsCommandArg(arg) {
   return `"${value.replace(/"/g, '\\"')}"`;
 }
 
-// Spawn daemon outside the current process tree when possible.
-// On Windows, tools that wait on a Job Object (e.g. OpenCode Bash) would
-// otherwise keep "loading" for as long as the daemon lives.
+// Spawn the daemon so it does NOT inherit the caller's pipe handles.
+//
+// On Windows, when the CLI chain is started by PowerShell with piped output
+// (as agent tools do), the pipe handles are inheritable and get copied into
+// every descendant created via CreateProcess(bInheritHandles=TRUE) - which is
+// how Node's spawn works, regardless of `stdio: 'ignore'`. A long-lived daemon
+// then keeps the pipe write end open, the tool never sees EOF and "loads"
+// forever. Verified fix: create the daemon via PowerShell Start-Process
+// (ShellExecute path, bInheritHandles=FALSE), so its handle table never
+// contains the caller's pipes.
+function spawnDaemonViaStartProcess(args) {
+  const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  const argLine = args.map((a) => `"${String(a).replace(/"/g, '\\"')}"`).join(' ');
+  const script = [
+    `$env:LEARN_SSH_HOME = ${psQuote(DATA_DIR)}`,
+    `$p = Start-Process -FilePath ${psQuote(process.execPath)} -ArgumentList ${psQuote(argLine)} -WorkingDirectory ${psQuote(path.dirname(DATA_DIR))} -WindowStyle Hidden -PassThru`,
+    'if ($null -eq $p) { exit 1 }',
+    'Write-Output $p.Id',
+  ].join('; ');
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    { encoding: 'utf8', windowsHide: true },
+  );
+  const pid = Number.parseInt(String(result.stdout || '').trim(), 10);
+  if (result.status === 0 && Number.isFinite(pid) && pid > 0) {
+    return {
+      pid,
+      kill() {
+        killProcessTree(pid);
+      },
+    };
+  }
+  return null;
+}
+
 function spawnDetachedDaemon(args) {
   if (process.platform === 'win32') {
-    const commandLine = [process.execPath, ...args].map(quoteWindowsCommandArg).join(' ');
-    const psScript = [
-      `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${JSON.stringify(commandLine)} }`,
-      'if ($null -eq $r -or $r.ReturnValue -ne 0 -or -not $r.ProcessId) { exit 1 }',
-      'Write-Output $r.ProcessId',
-    ].join('; ');
-    const result = spawnSync(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
-      { encoding: 'utf8', windowsHide: true },
-    );
-    const pid = Number.parseInt(String(result.stdout || '').trim(), 10);
-    if (result.status === 0 && Number.isFinite(pid) && pid > 0) {
-      return {
-        pid,
-        kill() {
-          killProcessTree(pid);
-        },
-      };
-    }
+    const viaStartProcess = spawnDaemonViaStartProcess(args);
+    if (viaStartProcess) return viaStartProcess;
+    process.stderr.write('learn-ssh: Start-Process launch failed, falling back to plain spawn (cold start may keep the calling tool busy)\n');
   }
-
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: 'ignore',
-    env: process.env,
+    env: { ...process.env, LEARN_SSH_HOME: DATA_DIR },
+    cwd: path.dirname(DATA_DIR),
     windowsHide: true,
   });
   child.unref();
