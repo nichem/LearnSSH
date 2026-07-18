@@ -347,6 +347,14 @@ function validateAlias(alias) {
   }
 }
 
+function requireKnownAlias(alias) {
+  validateAlias(alias);
+  const config = loadConfig();
+  if (!config.servers || !config.servers[alias]) {
+    throw new Error(`Unknown alias: ${alias}`);
+  }
+}
+
 function asPort(value, fallback = 22) {
   const port = value === undefined ? fallback : Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -973,6 +981,96 @@ async function pingDaemon(alias) {
   }
 }
 
+// SSH connect can exceed 10s on slow links; keep parent waiting long enough.
+const DAEMON_START_TIMEOUT_MS = 60000;
+
+function isPidAlive(pid) {
+  if (!pid || !Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function killProcessTree(pid) {
+  if (!pid || !Number.isFinite(pid) || pid <= 0) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // Ignore.
+    }
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // Ignore.
+    }
+  }
+}
+
+function quoteWindowsCommandArg(arg) {
+  const value = String(arg);
+  if (!/[\s"]/u.test(value)) return value;
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+// Spawn daemon outside the current process tree when possible.
+// On Windows, tools that wait on a Job Object (e.g. OpenCode Bash) would
+// otherwise keep "loading" for as long as the daemon lives.
+function spawnDetachedDaemon(args) {
+  if (process.platform === 'win32') {
+    const commandLine = [process.execPath, ...args].map(quoteWindowsCommandArg).join(' ');
+    const psScript = [
+      `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${JSON.stringify(commandLine)} }`,
+      'if ($null -eq $r -or $r.ReturnValue -ne 0 -or -not $r.ProcessId) { exit 1 }',
+      'Write-Output $r.ProcessId',
+    ].join('; ');
+    const result = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    const pid = Number.parseInt(String(result.stdout || '').trim(), 10);
+    if (result.status === 0 && Number.isFinite(pid) && pid > 0) {
+      return {
+        pid,
+        kill() {
+          killProcessTree(pid);
+        },
+      };
+    }
+  }
+
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+    windowsHide: true,
+  });
+  child.unref();
+  return {
+    pid: child.pid,
+    kill() {
+      killProcessTree(child.pid);
+    },
+  };
+}
+
 async function startDaemon(alias, idleTimeoutSeconds) {
   if (await pingDaemon(alias)) return { reused: true };
 
@@ -985,24 +1083,39 @@ async function startDaemon(alias, idleTimeoutSeconds) {
     '--idle-timeout',
     String(idleTimeoutSeconds),
   ];
-  const child = spawn(process.execPath, args, {
-    detached: true,
-    stdio: 'ignore',
-    env: process.env,
-  });
-  child.unref();
-
-  const deadline = Date.now() + 10000;
+  const child = spawnDetachedDaemon(args);
+  const startedAt = Date.now();
+  const deadline = startedAt + DAEMON_START_TIMEOUT_MS;
   let lastError = null;
+  let lastProgressAt = 0;
+  process.stderr.write(`learn-ssh: starting daemon for ${alias} (pid=${child.pid || '?'})...\n`);
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));
+    if (child.pid && !isPidAlive(child.pid)) {
+      removeDaemonInfo(alias);
+      throw new Error(`Unable to start daemon for alias: ${alias} (process exited early)`);
+    }
+    const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+    if (elapsedSec > 0 && elapsedSec % 5 === 0 && elapsedSec !== lastProgressAt) {
+      lastProgressAt = elapsedSec;
+      process.stderr.write(`learn-ssh: waiting for daemon ${alias}... ${elapsedSec}s\n`);
+    }
     try {
-      if (await pingDaemon(alias)) return { reused: false };
+      if (await pingDaemon(alias)) {
+        process.stderr.write(`learn-ssh: daemon ready for ${alias} (${elapsedSec}s)\n`);
+        return { reused: false };
+      }
     } catch (err) {
       lastError = err;
     }
   }
 
+  try {
+    child.kill();
+  } catch {
+    // Best effort.
+  }
+  removeDaemonInfo(alias);
   throw new Error(`Unable to start daemon for alias: ${alias}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
@@ -1054,7 +1167,7 @@ function execRemote(client, command, timeoutMs) {
 }
 
 async function daemonServeCommand(alias, opts) {
-  validateAlias(alias);
+  requireKnownAlias(alias);
   const idleTimeoutMs = asIdleTimeoutMs(opts.idleTimeout);
   const context = { clients: [], stack: [] };
   const token = crypto.randomBytes(32).toString('base64url');
@@ -1238,8 +1351,7 @@ async function execCommand(alias, command, opts) {
       stderr: result.stderr,
     };
     printResult(opts, value, formatExecResult);
-    process.exitCode = result.exitCode === 0 ? 0 : 1;
-    return;
+    process.exit(result.exitCode === 0 ? 0 : 1);
   }
 
   const context = { clients: [], stack: [] };
@@ -1259,7 +1371,7 @@ async function execCommand(alias, command, opts) {
       stderr: result.stderr,
     };
     printResult(opts, value, formatExecResult);
-    process.exitCode = result.exitCode === 0 ? 0 : 1;
+    process.exit(result.exitCode === 0 ? 0 : 1);
   } finally {
     closeClients(context);
   }
@@ -1473,7 +1585,7 @@ async function daemonCommand(opts) {
   }
 
   if (subcommand === 'start') {
-    validateAlias(alias);
+    requireKnownAlias(alias);
     const idleTimeoutMs = asIdleTimeoutMs(opts.idleTimeout ?? opts.daemonIdleTimeout);
     const start = await startDaemon(alias, idleTimeoutMs / 1000);
     const status = await daemonStatus(alias);
@@ -1572,25 +1684,25 @@ async function main() {
   if (command === 'exec') {
     const alias = opts._[0];
     const remoteCommand = opts.stdin ? await readStdinText() : (opts.command ? String(opts.command) : opts._.slice(1).join(' '));
-    validateAlias(alias);
+    requireKnownAlias(alias);
     return execCommand(alias, remoteCommand, opts);
   }
 
   if (command === 'upload') {
     const [alias, localPath, remotePath] = opts._;
-    validateAlias(alias);
+    requireKnownAlias(alias);
     return uploadCommand(alias, localPath, remotePath, opts);
   }
 
   if (command === 'download') {
     const [alias, remotePath, localPath] = opts._;
-    validateAlias(alias);
+    requireKnownAlias(alias);
     return downloadCommand(alias, remotePath, localPath, opts);
   }
 
   if (command === 'tunnel') {
     const alias = opts._[0];
-    validateAlias(alias);
+    requireKnownAlias(alias);
     return tunnelCommand(alias, opts);
   }
 
