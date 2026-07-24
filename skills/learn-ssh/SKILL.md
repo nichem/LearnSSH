@@ -106,6 +106,8 @@ $LEARN_SSH exec prod-web-1 -- "hostname && uptime && df -h"
 
 `exec` uses a per-alias local daemon by default. If an SSH connection for that alias is already open and has been active within the idle timeout, the CLI reuses it. If no reusable daemon exists, the CLI starts one automatically. The daemon exits after 60 minutes without commands by default. The CLI hard-blocks `rm -rf /` style root deletion; other risky remote commands rely on the host tool permission flow.
 
+By default `exec` wraps the command in `bash -lic`, so the remote shell loads the full login + interactive environment (`~/.bashrc`, `~/.profile`, nvm, uv, sdkman, ...) just like a real SSH login -- tools such as `uv` and `nvm node` are directly usable. Two harmless `bash` startup warnings on stderr are filtered automatically. Pass `--no-login` to run raw in a minimal non-interactive shell (faster, cleaner output, but those tools will not be on `PATH`).
+
 For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables:
 
 ```bash

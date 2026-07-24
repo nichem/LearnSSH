@@ -64,6 +64,7 @@ Exec options:
   --daemon-idle-timeout <seconds>
                             Reused SSH connection idle timeout. Default: 3600.
   --no-daemon               Run once without connection reuse.
+  --no-login                Run raw without a login+interactive shell (skip bashrc/profile/nvm).
 
 Output options:
   --json                    Print the machine-readable JSON response.
@@ -1135,7 +1136,32 @@ async function startDaemon(alias, idleTimeoutSeconds) {
   throw new Error(`Unable to start daemon for alias: ${alias}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
-function execRemote(client, command, timeoutMs) {
+// Wrap a command so the remote shell loads the full login + interactive
+// environment (bashrc / profile / nvm / uv / sdkman ...), mirroring a real SSH
+// login. sshd runs `exec` requests in a non-interactive, non-login shell, so
+// ~/.bashrc's non-interactive early-return would skip nvm/uv setup. `bash -lic`
+// forces login + interactive, loading the whole rc chain. The command is single
+// quoted (inner quotes escaped) so it reaches the inner bash verbatim.
+function wrapLoginShell(command) {
+  const escaped = String(command).replace(/'/gu, "'\\''");
+  return `bash -lic '${escaped}'`;
+}
+
+// `bash -lic` under a non-tty SSH exec prints two harmless startup warnings to
+// stderr ("cannot set terminal process group" / "no job control in this
+// shell"). Strip them so they don't pollute every exec result.
+function filterLoginShellNoise(stderr) {
+  if (!stderr) return stderr;
+  const filtered = stderr
+    .split('\n')
+    .filter((line) => !/cannot set terminal process group|no job control in this shell/u.test(line))
+    .join('\n');
+  return filtered.replace(/\n+$/u, '');
+}
+
+function execRemote(client, command, timeoutMs, options = {}) {
+  const login = options.login !== false;
+  const remoteCommand = login ? wrapLoginShell(command) : command;
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
@@ -1152,7 +1178,7 @@ function execRemote(client, command, timeoutMs) {
       reject(new Error(`Remote command timed out after ${timeoutMs} ms`));
     }, timeoutMs) : null;
 
-    client.exec(command, (err, stream) => {
+    client.exec(remoteCommand, (err, stream) => {
       if (err) {
         if (timer) clearTimeout(timer);
         reject(err);
@@ -1175,7 +1201,7 @@ function execRemote(client, command, timeoutMs) {
           exitCode: exitCode ?? code ?? 0,
           signal: signal || sig || null,
           stdout,
-          stderr,
+          stderr: login ? filterLoginShellNoise(stderr) : stderr,
         });
       });
     });
@@ -1279,7 +1305,7 @@ async function daemonServeCommand(alias, opts) {
         active += 1;
         touch();
         try {
-          const result = await execRemote(client, String(request.command), Number(request.timeoutMs) || 30000);
+          const result = await execRemote(client, String(request.command), Number(request.timeoutMs) || 30000, { login: request.login !== false });
           touch();
           send(socket, { ok: true, result });
         } catch (err) {
@@ -1344,7 +1370,7 @@ async function execViaDaemon(alias, command, opts) {
   const timeoutMs = asTimeoutMs(opts.timeout);
   const daemonIdleTimeoutMs = asIdleTimeoutMs(opts.daemonIdleTimeout);
   const start = await startDaemon(alias, daemonIdleTimeoutMs / 1000);
-  const response = await daemonRequest(alias, 'exec', { command, timeoutMs }, timeoutMs + 5000);
+  const response = await daemonRequest(alias, 'exec', { command, timeoutMs, login: !opts.noLogin }, timeoutMs + 5000);
   if (!response) throw new Error(`Daemon did not respond for alias: ${alias}`);
   if (!response.ok) throw new Error(response.error || `Daemon exec failed for alias: ${alias}`);
   return { result: response.result, reused: start.reused };
@@ -1374,7 +1400,7 @@ async function execCommand(alias, command, opts) {
   try {
     const client = await connectAlias(alias, context);
     const timeoutMs = asTimeoutMs(opts.timeout);
-    const result = await execRemote(client, command, timeoutMs);
+    const result = await execRemote(client, command, timeoutMs, { login: !opts.noLogin });
     const value = {
       success: result.exitCode === 0,
       alias,
