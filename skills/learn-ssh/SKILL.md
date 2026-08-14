@@ -25,13 +25,13 @@ Preferred install command (run from your project root):
 npx --yes github:nichem/LearnSSH
 ```
 
-The installer copies the skill into **project-level** directories for three agents:
-- `.codex/skills/learn-ssh/`
-- `.claude/skills/learn-ssh/`
-- `.opencode/skills/learn-ssh/`
+The installer auto-detects which agents the project already uses (`.codex/`, `.claude/`, `.cursor/`, ...) and installs only for those; with no detection it falls back to Codex, Claude Code, and opencode:
+
+- Skill-format agents (Codex, Claude Code, opencode, ZCode, ...) get a `skills/learn-ssh/` directory with this SKILL.md.
+- Rule-format agents (Cursor, Windsurf, Copilot, Cline, Roo Code, ...) get a generated rule file pointing at the bundled CLI.
 
 It also installs Node.js dependencies and creates a launcher at `./.learn-ssh/bin/learn-ssh`.
-Use `--agents codex,claude` to install for a subset. Use `--force` to replace an existing install.
+Options: `--agents codex,claude` for a subset, `--all` for every registered agent, `--target <dir>` to install the standard skill into any directory (for agent tools not yet in the registry), `--scope user` for per-user skill directories, and `--force` to replace an existing install.
 
 When running commands, use `LEARN_SSH="./.learn-ssh/bin/learn-ssh"` unless `learn-ssh` is already on `PATH`.
 

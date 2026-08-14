@@ -23,24 +23,37 @@ English version: [README.md](README.md)
 npx --yes github:nichem/LearnSSH
 ```
 
-这会把 skill 装到项目级目录，同时支持 **Codex**、**Claude Code** 和 **opencode** 三个 agent：
-- `.codex/skills/learn-ssh/`
-- `.claude/skills/learn-ssh/`
-- `.opencode/skills/learn-ssh/`
+安装器会自动探测项目里已经在用哪些 agent（`.codex/`、`.claude/`、`.cursor/` ...），只为探测到的安装；一个都没探测到时回退到 **Codex**、**Claude Code** 和 **opencode**。
+
+支持的 agent 由 `agents.json` 注册表定义：
+
+| Agent | 格式 | 位置 |
+|-------|------|------|
+| Codex | skill | `.codex/skills/learn-ssh/` |
+| Claude Code | skill | `.claude/skills/learn-ssh/` |
+| opencode | skill | `.opencode/skills/learn-ssh/` |
+| ZCode | skill | `.zcode/skills/learn-ssh/` |
+| Cursor | rule | `.cursor/rules/learn-ssh.mdc` |
+| Windsurf | rule | `.windsurf/rules/learn-ssh.md` |
+| GitHub Copilot | rule | `.github/instructions/learn-ssh.instructions.md` |
+| Cline | rule | `.clinerules/learn-ssh.md` |
+| Roo Code | rule | `.roo/rules/learn-ssh.md` |
+
+skill 格式的 agent 装标准 `SKILL.md` 目录；rule 格式的 agent 生成一个小规则文件（描述 + 硬性规则 + CLI 速查），指向内置 CLI。
 
 启动器创建在 `./.learn-ssh/bin/learn-ssh`。然后重启 agent，使用 `$learn-ssh`。
 
-更新已有安装时运行：
+更多选项：
 
 ```bash
-npx --yes github:nichem/LearnSSH --force
+npx --yes github:nichem/LearnSSH --force              # 覆盖已有安装
+npx --yes github:nichem/LearnSSH --agents codex,claude  # 指定子集，跳过自动探测
+npx --yes github:nichem/LearnSSH --all                # 装全部注册的 agent
+npx --yes github:nichem/LearnSSH --target .myagent/skills  # 任意目录，标准 SKILL.md 格式
+npx --yes github:nichem/LearnSSH --scope user         # 用户级技能目录（~/.claude/skills 等）
 ```
 
-只装部分 agent：
-
-```bash
-npx --yes github:nichem/LearnSSH --agents codex,claude
-```
+`--target` 让安装器可以适配任何支持 Agent Skills（`SKILL.md`）格式的 AI 工具，即使它还没进注册表。要支持新 agent，只需在 `agents.json` 里加一条，不用改安装代码。
 
 ## 首次配置
 
@@ -135,6 +148,7 @@ CLI 本身仍会在本地硬拦截 `rm -rf /` 这类根目录强删命令，并�
 ## 项目结构
 
 ```text
+agents.json
 bin/install.mjs
 package.json
 skills/learn-ssh/

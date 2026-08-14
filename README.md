@@ -23,24 +23,37 @@ Run from your project root:
 npx --yes github:nichem/LearnSSH
 ```
 
-This installs the skill into project-level directories for **Codex**, **Claude Code**, and **opencode**:
-- `.codex/skills/learn-ssh/`
-- `.claude/skills/learn-ssh/`
-- `.opencode/skills/learn-ssh/`
+The installer auto-detects which agents the project already uses (`.codex/`, `.claude/`, `.cursor/`, ...) and installs only for those. With no detection it falls back to **Codex**, **Claude Code**, and **opencode**.
+
+Supported agents are defined in the `agents.json` registry:
+
+| Agent | Format | Location |
+|-------|--------|----------|
+| Codex | skill | `.codex/skills/learn-ssh/` |
+| Claude Code | skill | `.claude/skills/learn-ssh/` |
+| opencode | skill | `.opencode/skills/learn-ssh/` |
+| ZCode | skill | `.zcode/skills/learn-ssh/` |
+| Cursor | rule | `.cursor/rules/learn-ssh.mdc` |
+| Windsurf | rule | `.windsurf/rules/learn-ssh.md` |
+| GitHub Copilot | rule | `.github/instructions/learn-ssh.instructions.md` |
+| Cline | rule | `.clinerules/learn-ssh.md` |
+| Roo Code | rule | `.roo/rules/learn-ssh.md` |
+
+Skill-format agents get the standard `SKILL.md` directory. Rule-format agents get a small generated rule file (description + hard rules + CLI cheatsheet) pointing at the bundled CLI.
 
 A launcher is created at `./.learn-ssh/bin/learn-ssh`. Then restart your agent and use `$learn-ssh`.
 
-To update an existing installation:
+Additional options:
 
 ```bash
-npx --yes github:nichem/LearnSSH --force
+npx --yes github:nichem/LearnSSH --force              # replace an existing install
+npx --yes github:nichem/LearnSSH --agents codex,claude  # explicit subset, skips auto-detect
+npx --yes github:nichem/LearnSSH --all                # every registered agent
+npx --yes github:nichem/LearnSSH --target .myagent/skills  # any dir, standard SKILL.md format
+npx --yes github:nichem/LearnSSH --scope user         # per-user skill dirs (~/.claude/skills, ...)
 ```
 
-To install for a subset of agents:
-
-```bash
-npx --yes github:nichem/LearnSSH --agents codex,claude
-```
+`--target` makes the installer work with any AI tool that loads the Agent Skills (`SKILL.md`) format, even before it is added to the registry. Adding a new agent to the registry is a one-line change in `agents.json` — no installer code changes needed.
 
 ## First-Time Setup
 
@@ -135,6 +148,7 @@ Secrets are not accepted as flags. Credentials are prompted in the terminal and 
 ## Project Layout
 
 ```text
+agents.json
 bin/install.mjs
 package.json
 skills/learn-ssh/

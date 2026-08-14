@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "支持的 AI 工具注册表。新增工具只需在这里加一条，安装脚本自动适配。format: skill = 复制 SKILL.md 标准技能目录；rule = 生成一个指向 CLI 的规则文件。",
+  "codex": {
+    "label": "Codex",
+    "format": "skill",
+    "projectDir": ".codex/skills",
+    "userDir": "~/.codex/skills",
+    "extras": ["agents"]
+  },
+  "claude": {
+    "label": "Claude Code",
+    "format": "skill",
+    "projectDir": ".claude/skills",
+    "userDir": "~/.claude/skills"
+  },
+  "opencode": {
+    "label": "opencode",
+    "format": "skill",
+    "projectDir": ".opencode/skills",
+    "userDir": "~/.config/opencode/skills"
+  },
+  "zcode": {
+    "label": "ZCode",
+    "format": "skill",
+    "projectDir": ".zcode/skills",
+    "userDir": "~/.zcode/skills"
+  },
+  "cursor": {
+    "label": "Cursor",
+    "format": "rule",
+    "projectDir": ".cursor/rules",
+    "ruleFile": "learn-ssh.mdc",
+    "ruleFrontmatter": "cursor"
+  },
+  "windsurf": {
+    "label": "Windsurf",
+    "format": "rule",
+    "projectDir": ".windsurf/rules",
+    "ruleFile": "learn-ssh.md"
+  },
+  "copilot": {
+    "label": "GitHub Copilot",
+    "format": "rule",
+    "projectDir": ".github/instructions",
+    "ruleFile": "learn-ssh.instructions.md",
+    "ruleFrontmatter": "copilot",
+    "detect": [".github/instructions", ".github/copilot-instructions.md"]
+  },
+  "cline": {
+    "label": "Cline",
+    "format": "rule",
+    "projectDir": ".clinerules",
+    "ruleFile": "learn-ssh.md"
+  },
+  "roo": {
+    "label": "Roo Code",
+    "format": "rule",
+    "projectDir": ".roo/rules",
+    "ruleFile": "learn-ssh.md"
+  }
+}

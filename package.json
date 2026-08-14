@@ -1,7 +1,7 @@
 {
   "name": "@learnaihubc/learn-ssh",
-  "version": "1.0.0",
-  "description": "Codex skill for alias-based SSH server operations.",
+  "version": "1.1.0",
+  "description": "Agent-agnostic SSH server operations skill for AI coding tools.",
   "bin": {
     "learn-ssh": "bin/install.mjs"
   },
@@ -9,6 +9,7 @@
     "README.md",
     "README_CN.md",
     "LICENSE",
+    "agents.json",
     "bin",
     "skills/learn-ssh"
   ],
