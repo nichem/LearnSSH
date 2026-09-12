@@ -27,6 +27,11 @@ const REGISTRY = loadRegistry();
 const AGENT_KEYS = Object.keys(REGISTRY);
 // 空项目默认写入跨工具共享目录，并为 Claude Code 保留专用目录。
 const FALLBACK_AGENTS = ["agents", "claude"];
+const USE_COLOR = Boolean(process.stdout.isTTY) && !("NO_COLOR" in process.env);
+
+function highlightForce() {
+  return USE_COLOR ? "\u001b[1;33m--force\u001b[0m" : "--force";
+}
 
 function usage() {
   console.log(`LearnSSH installer (project-local)
@@ -47,7 +52,7 @@ By default the installer auto-detects which agents the project already uses
 detection it falls back to: ${FALLBACK_AGENTS.join(", ")}.
 
 Options:
-  --force            Replace an existing LearnSSH skill installation
+  ${highlightForce()}            Replace an existing LearnSSH skill installation
   --no-bin           Do not create the learn-ssh launcher
   --agents <list>    Comma-separated agent keys (see list above). Skips
                      auto-detection.
@@ -223,34 +228,51 @@ Full documentation: https://github.com/nichem/LearnSSH
 
 function installDependencies(scriptsDir) {
   if (!fs.existsSync(path.join(scriptsDir, "package.json"))) return;
-  const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
-  // On Windows npm is a .cmd shim, so spawnSync needs shell: true. With a shell
-  // the args are joined into one command line without quoting, so a prefix path
-  // containing spaces (e.g. C:\Users\John Doe\proj) would be split. Quote it.
-  // Windows paths cannot contain a double-quote, so wrapping is safe.
-  const useShell = process.platform === "win32";
-  const prefixArg = useShell ? `"${scriptsDir}"` : scriptsDir;
-  console.log("Installing LearnSSH Node dependencies...");
-  const result = spawnSync(npmBin, ["install", "--omit=dev", "--prefix", prefixArg], {
-    stdio: "inherit",
-    shell: useShell,
-  });
+  const npmArgs = [
+    "install",
+    "--omit=dev",
+    "--prefix",
+    scriptsDir,
+    "--no-audit",
+    "--no-fund",
+    "--no-progress",
+    "--loglevel=error",
+  ];
+  const npmCliCandidates = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  const npmCli = npmCliCandidates.find((candidate) => candidate && fs.existsSync(candidate));
+  if (process.platform === "win32" && !npmCli) {
+    throw new Error("Could not locate npm-cli.js in the current Node.js installation");
+  }
+  const command = npmCli ? process.execPath : "npm";
+  const args = npmCli ? [npmCli, ...npmArgs] : npmArgs;
+  const result = spawnSync(command, args, { encoding: "utf8" });
   if (result.error) throw result.error;
   if (result.status !== 0) {
+    const details = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    if (details) console.error(details);
     throw new Error(`npm install failed with exit code ${result.status}`);
   }
 }
 
 function initializeStorage(scriptsDir, projectRoot) {
   const cliPath = path.join(scriptsDir, "ssh-node-ops.mjs");
-  console.log("Initializing LearnSSH secure storage...");
-  const result = spawnSync(process.execPath, [cliPath, "init"], {
+  const result = spawnSync(process.execPath, [cliPath, "init", "--json"], {
     cwd: projectRoot,
-    stdio: "inherit",
+    encoding: "utf8",
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
+    const details = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    if (details) console.error(details);
     throw new Error(`LearnSSH initialization failed with exit code ${result.status}`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error("LearnSSH initialization returned an invalid response");
   }
 }
 
@@ -291,6 +313,17 @@ function ensureGitignoreEntry(projectRoot) {
   return true;
 }
 
+function displayPath(target, projectRoot = process.cwd()) {
+  const relative = path.relative(projectRoot, target);
+  const isOutside = relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+  if (!isOutside) return relative ? `.${path.sep}${relative}` : ".";
+  return target;
+}
+
+function installLabel(agent, destination) {
+  return agent?.label || displayPath(destination);
+}
+
 function agentBaseDir(projectRoot, agent, scope) {
   if (scope === "user") {
     if (!agent.userDir) return null;
@@ -305,8 +338,7 @@ function installSkill(dest, agent, opts, installed) {
   if (fs.existsSync(dest)) {
     validateSkillDestination(dest);
     if (!opts.force) {
-      console.log(`LearnSSH is already installed at ${dest}`);
-      installed.push({ label: dest, skipped: true });
+      installed.push({ label: installLabel(agent, dest), skipped: true });
       return;
     }
     fs.rmSync(dest, { recursive: true, force: true });
@@ -314,8 +346,7 @@ function installSkill(dest, agent, opts, installed) {
 
   fs.mkdirSync(dest, { recursive: true });
   copySkillMetadata(dest, agent);
-  installed.push({ label: dest, skipped: false });
-  console.log(`Skill metadata installed to ${dest}`);
+  installed.push({ label: installLabel(agent, dest), skipped: false });
 }
 
 function installRule(rulePath, agent, opts, installed) {
@@ -324,15 +355,13 @@ function installRule(rulePath, agent, opts, installed) {
   if (fs.existsSync(rulePath)) {
     validateRuleDestination(rulePath);
     if (!opts.force) {
-      console.log(`LearnSSH rule already exists at ${rulePath}`);
-      installed.push({ label: rulePath, skipped: true });
+      installed.push({ label: installLabel(agent, rulePath), skipped: true });
       return;
     }
   }
 
   fs.writeFileSync(rulePath, renderRule(agent, opts.bin));
-  installed.push({ label: rulePath, skipped: false });
-  console.log(`Rule file installed to ${rulePath}`);
+  installed.push({ label: installLabel(agent, rulePath), skipped: false });
 }
 
 function install(opts) {
@@ -350,9 +379,6 @@ function install(opts) {
     agentKeys = detectAgents(projectRoot);
     if (agentKeys.length === 0) {
       agentKeys = FALLBACK_AGENTS;
-      console.log(`No agent directories detected; falling back to: ${FALLBACK_AGENTS.join(", ")}`);
-    } else {
-      console.log(`Detected agents: ${agentKeys.join(", ")}`);
     }
   }
 
@@ -388,8 +414,7 @@ function install(opts) {
   const scriptsSrc = path.join(sourceSkillRoot, "scripts");
   fs.cpSync(scriptsSrc, scriptsDir, { recursive: true, force: true, verbatimSymlinks: false });
   installDependencies(scriptsDir);
-  console.log(`CLI installed to ${scriptsDir}`);
-  initializeStorage(scriptsDir, projectRoot);
+  const storage = initializeStorage(scriptsDir, projectRoot);
 
   const installed = [];
   for (const target of targets) {
@@ -400,27 +425,28 @@ function install(opts) {
     }
   }
 
-  if (opts.bin) {
-    const launcher = writeLauncher();
-    console.log(`Launcher installed to ${launcher}`);
-    const launcherCommand = process.platform === "win32"
-      ? ".\\.learn-ssh\\bin\\learn-ssh.cmd"
-      : "./.learn-ssh/bin/learn-ssh";
-    console.log(`Run: ${launcherCommand} list`);
-  }
+  const launcher = opts.bin ? writeLauncher() : null;
+  const launcherCommand = process.platform === "win32"
+    ? ".\\.learn-ssh\\bin\\learn-ssh.cmd"
+    : "./.learn-ssh/bin/learn-ssh";
 
   if (opts.scope === "project") {
-    if (ensureGitignoreEntry(projectRoot)) {
-      console.log(`Added .learn-ssh/ to ${path.join(projectRoot, ".gitignore")}`);
-    }
+    ensureGitignoreEntry(projectRoot);
   }
 
-  console.log(`\nDone. Skill installed for: ${installed.map((a) => a.label).join(", ")}.`);
-  console.log("Project-local secure storage is ready.");
-  if (!opts.force && installed.some((item) => item.skipped)) {
-    console.log("Existing LearnSSH installation(s) were kept. Add --force to the same install command to replace them.");
+  const changed = installed.filter((item) => !item.skipped).map((item) => item.label);
+  const kept = installed.filter((item) => item.skipped).map((item) => item.label);
+  console.log("LearnSSH ready");
+  console.log(`CLI: ${displayPath(scriptsDir, projectRoot)}`);
+  console.log(`Storage: ${displayPath(storage.storageDir, projectRoot)} (${storage.masterKeyProvider})`);
+  if (changed.length) console.log(`Skills installed: ${changed.join(", ")}`);
+  if (kept.length) console.log(`Skills kept: ${kept.join(", ")}`);
+  if (launcher) console.log(`Launcher: ${displayPath(launcher, projectRoot)}`);
+  if (!opts.force && kept.length) {
+    console.log(`Tip: re-run with ${highlightForce()} to replace existing skill installations.`);
   }
-  console.log("Restart your agent(s), then use $learn-ssh for SSH server operations.");
+  if (launcher) console.log(`Run: ${launcherCommand} list`);
+  console.log("Restart your agent(s) to reload the skill.");
 }
 
 try {
