@@ -25,8 +25,8 @@ function loadRegistry() {
 
 const REGISTRY = loadRegistry();
 const AGENT_KEYS = Object.keys(REGISTRY);
-// 一个都没探测到时的回退集合，保持与旧版行为一致
-const FALLBACK_AGENTS = ["codex", "claude", "opencode"];
+// 空项目默认写入跨工具共享目录，并为 Claude Code 保留专用目录。
+const FALLBACK_AGENTS = ["agents", "claude"];
 
 function usage() {
   console.log(`LearnSSH installer (project-local)
@@ -36,13 +36,14 @@ Usage:
 
 Installs the learn-ssh skill for AI coding agents. Supported agents are
 defined in agents.json; current list: ${AGENT_KEYS.join(", ")}.
+The same command also initializes project-local encrypted storage.
 
-Skill-format agents get a SKILL.md directory (e.g. .claude/skills/learn-ssh/).
+Skill-format agents get a SKILL.md directory (e.g. .agents/skills/learn-ssh/).
 Rule-format agents (Cursor, Copilot, ...) get a generated rule file pointing
 at the bundled CLI.
 
 By default the installer auto-detects which agents the project already uses
-(.codex/, .claude/, .cursor/, ...) and installs only for those; with no
+(.agents/, .claude/, .cursor/, ...) and installs only for those; with no
 detection it falls back to: ${FALLBACK_AGENTS.join(", ")}.
 
 Options:
@@ -54,7 +55,7 @@ Options:
   --target <dir>     Install the standard SKILL.md skill into an arbitrary
                      directory (works with any agent-compatible tool)
   --scope <scope>    project (default) or user. User scope installs skills
-                     into per-user directories (~/.claude/skills, ...) where
+                     into per-user directories (~/.agents/skills, ...) where
                      the agent supports it
   --help             Show this help
 `);
@@ -138,6 +139,20 @@ function isLearnSshInstall(dir) {
   return /^name:\s*learn-ssh\s*$/m.test(body);
 }
 
+function validateSkillDestination(dest) {
+  if (fs.existsSync(dest) && !isLearnSshInstall(dest)) {
+    throw new Error(`Destination exists and does not look like LearnSSH: ${dest}`);
+  }
+}
+
+function validateRuleDestination(rulePath) {
+  if (!fs.existsSync(rulePath)) return;
+  const existing = fs.readFileSync(rulePath, "utf8");
+  if (!existing.includes(RULE_MARKER)) {
+    throw new Error(`Destination exists and does not look like LearnSSH: ${rulePath}`);
+  }
+}
+
 function copySkillMetadata(destRoot, agent) {
   const skillMdSrc = path.join(sourceSkillRoot, "SKILL.md");
   fs.cpSync(skillMdSrc, path.join(destRoot, "SKILL.md"), { force: true });
@@ -164,8 +179,12 @@ function extractRuleContent() {
   return { desc, hardRules: hardRules.trim() };
 }
 
-function renderRule(agent) {
+function renderRule(agent, useLauncher) {
   const { desc, hardRules } = extractRuleContent();
+  const platformLauncher = process.platform === "win32"
+    ? ".\\.learn-ssh\\bin\\learn-ssh.cmd"
+    : "./.learn-ssh/bin/learn-ssh";
+  const cli = useLauncher ? platformLauncher : "node ./.learn-ssh/scripts/ssh-node-ops.mjs";
   let frontmatter = "";
   if (agent.ruleFrontmatter === "cursor") {
     frontmatter = `---\ndescription: LearnSSH\nalwaysApply: true\n---\n`;
@@ -178,10 +197,9 @@ function renderRule(agent) {
 
 ${desc}
 
-Use the bundled Node.js CLI at \`./.learn-ssh/bin/learn-ssh\` (or set
-\`LEARN_SSH="./.learn-ssh/bin/learn-ssh"\`) for every SSH operation. Work with
-server aliases only; secrets live in encrypted per-project storage and are
-never entered in chat.
+Use the bundled CLI at \`${cli}\` for every SSH operation. Work with server
+aliases only; secrets live in encrypted per-project storage and are never
+entered in chat.
 
 ## Hard Rules
 
@@ -189,16 +207,14 @@ ${hardRules}
 
 ## Command Cheatsheet
 
-\`\`\`bash
-LEARN_SSH="./.learn-ssh/bin/learn-ssh"
-$LEARN_SSH init                          # 初始化加密存储（用户自己在终端运行）
-$LEARN_SSH add --alias <a> --host <h> --user <u> --auth password|key  # 用户自己运行
-$LEARN_SSH list                          # 列出别名
-$LEARN_SSH show <alias>                  # 查看别名（不含敏感信息）
-$LEARN_SSH exec <alias> -- "<cmd>"       # 执行远程命令
-$LEARN_SSH upload <alias> <local> <remote>
-$LEARN_SSH download <alias> <remote> <local>
-$LEARN_SSH tunnel <alias> --local-port <lp> --remote-port <rp>
+\`\`\`text
+${cli} add --alias <a> --host <h> --user <u> --auth password|key
+${cli} list
+${cli} show <alias>
+${cli} exec <alias> -- "<cmd>"
+${cli} upload <alias> <local> <remote>
+${cli} download <alias> <remote> <local>
+${cli} tunnel <alias> --local-port <lp> --remote-port <rp>
 \`\`\`
 
 Full documentation: https://github.com/nichem/LearnSSH
@@ -222,6 +238,19 @@ function installDependencies(scriptsDir) {
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`npm install failed with exit code ${result.status}`);
+  }
+}
+
+function initializeStorage(scriptsDir, projectRoot) {
+  const cliPath = path.join(scriptsDir, "ssh-node-ops.mjs");
+  console.log("Initializing LearnSSH secure storage...");
+  const result = spawnSync(process.execPath, [cliPath, "init"], {
+    cwd: projectRoot,
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`LearnSSH initialization failed with exit code ${result.status}`);
   }
 }
 
@@ -256,9 +285,10 @@ function ensureGitignoreEntry(projectRoot) {
   if (fs.existsSync(gitignorePath)) {
     existing = fs.readFileSync(gitignorePath, "utf8");
   }
-  if (existing.includes(entry)) return;
+  if (existing.includes(entry)) return false;
   const addition = existing && !existing.endsWith("\n") ? `\n${entry}\n` : `${entry}\n`;
   fs.appendFileSync(gitignorePath, addition);
+  return true;
 }
 
 function agentBaseDir(projectRoot, agent, scope) {
@@ -273,9 +303,7 @@ function installSkill(dest, agent, opts, installed) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   if (fs.existsSync(dest)) {
-    if (!isLearnSshInstall(dest)) {
-      throw new Error(`Destination exists and does not look like LearnSSH: ${dest}`);
-    }
+    validateSkillDestination(dest);
     if (!opts.force) {
       console.log(`LearnSSH is already installed at ${dest}`);
       installed.push({ label: dest, skipped: true });
@@ -294,10 +322,7 @@ function installRule(rulePath, agent, opts, installed) {
   fs.mkdirSync(path.dirname(rulePath), { recursive: true });
 
   if (fs.existsSync(rulePath)) {
-    const existing = fs.readFileSync(rulePath, "utf8");
-    if (!existing.includes(RULE_MARKER)) {
-      throw new Error(`Destination exists and does not look like LearnSSH: ${rulePath}`);
-    }
+    validateRuleDestination(rulePath);
     if (!opts.force) {
       console.log(`LearnSSH rule already exists at ${rulePath}`);
       installed.push({ label: rulePath, skipped: true });
@@ -305,7 +330,7 @@ function installRule(rulePath, agent, opts, installed) {
     }
   }
 
-  fs.writeFileSync(rulePath, renderRule(agent));
+  fs.writeFileSync(rulePath, renderRule(agent, opts.bin));
   installed.push({ label: rulePath, skipped: false });
   console.log(`Rule file installed to ${rulePath}`);
 }
@@ -315,13 +340,6 @@ function install(opts) {
   const projectRoot = process.cwd();
   const learnSshDir = path.join(projectRoot, ".learn-ssh");
   const scriptsDir = path.join(learnSshDir, "scripts");
-
-  fs.mkdirSync(learnSshDir, { recursive: true });
-
-  const scriptsSrc = path.join(sourceSkillRoot, "scripts");
-  fs.cpSync(scriptsSrc, scriptsDir, { recursive: true, force: true, verbatimSymlinks: false });
-  installDependencies(scriptsDir);
-  console.log(`CLI installed to ${scriptsDir}`);
 
   let agentKeys;
   if (opts.agents) {
@@ -338,7 +356,7 @@ function install(opts) {
     }
   }
 
-  const installed = [];
+  const targets = [];
   for (const key of agentKeys) {
     const agent = REGISTRY[key];
     const baseDir = agentBaseDir(projectRoot, agent, opts.scope);
@@ -347,33 +365,62 @@ function install(opts) {
       continue;
     }
     if (agent.format === "rule") {
-      installRule(path.join(baseDir, agent.ruleFile), agent, opts, installed);
+      targets.push({ format: "rule", destination: path.join(baseDir, agent.ruleFile), agent });
     } else {
-      installSkill(path.join(baseDir, SKILL_NAME), agent, opts, installed);
+      targets.push({ format: "skill", destination: path.join(baseDir, SKILL_NAME), agent });
     }
   }
 
   if (opts.target) {
     const targetDir = path.resolve(projectRoot, opts.target);
-    installSkill(path.join(targetDir, SKILL_NAME), null, opts, installed);
+    targets.push({ format: "skill", destination: path.join(targetDir, SKILL_NAME), agent: null });
   }
 
-  let launcher = null;
-  const activeInstalls = installed.filter((a) => !a.skipped);
-  if (opts.bin && activeInstalls.length > 0) {
-    launcher = writeLauncher();
+  for (const target of targets) {
+    if (target.format === "rule") {
+      validateRuleDestination(target.destination);
+    } else {
+      validateSkillDestination(target.destination);
+    }
+  }
+
+  fs.mkdirSync(learnSshDir, { recursive: true });
+  const scriptsSrc = path.join(sourceSkillRoot, "scripts");
+  fs.cpSync(scriptsSrc, scriptsDir, { recursive: true, force: true, verbatimSymlinks: false });
+  installDependencies(scriptsDir);
+  console.log(`CLI installed to ${scriptsDir}`);
+  initializeStorage(scriptsDir, projectRoot);
+
+  const installed = [];
+  for (const target of targets) {
+    if (target.format === "rule") {
+      installRule(target.destination, target.agent, opts, installed);
+    } else {
+      installSkill(target.destination, target.agent, opts, installed);
+    }
+  }
+
+  if (opts.bin) {
+    const launcher = writeLauncher();
     console.log(`Launcher installed to ${launcher}`);
-    console.log(`Run: ${launcher} list`);
+    const launcherCommand = process.platform === "win32"
+      ? ".\\.learn-ssh\\bin\\learn-ssh.cmd"
+      : "./.learn-ssh/bin/learn-ssh";
+    console.log(`Run: ${launcherCommand} list`);
   }
 
   if (opts.scope === "project") {
-    ensureGitignoreEntry(projectRoot);
-    console.log(`Added .learn-ssh/ to ${path.join(projectRoot, ".gitignore")}`);
+    if (ensureGitignoreEntry(projectRoot)) {
+      console.log(`Added .learn-ssh/ to ${path.join(projectRoot, ".gitignore")}`);
+    }
   }
 
   console.log(`\nDone. Skill installed for: ${installed.map((a) => a.label).join(", ")}.`);
+  console.log("Project-local secure storage is ready.");
+  if (!opts.force && installed.some((item) => item.skipped)) {
+    console.log("Existing LearnSSH installation(s) were kept. Add --force to the same install command to replace them.");
+  }
   console.log("Restart your agent(s), then use $learn-ssh for SSH server operations.");
-  console.log("Run `$LEARN_SSH init` in the project to initialize encrypted storage.");
 }
 
 try {

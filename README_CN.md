@@ -23,12 +23,13 @@ English version: [README.md](README.md)
 npx --yes github:nichem/LearnSSH
 ```
 
-安装器会自动探测项目里已经在用哪些 agent（`.codex/`、`.claude/`、`.cursor/` ...），只为探测到的安装；一个都没探测到时回退到 **Codex**、**Claude Code** 和 **opencode**。
+安装器会自动探测项目里已经在用哪些 agent（`.agents/`、`.claude/`、`.cursor/` ...），只为探测到的目标安装。一个都没探测到时，默认同时安装到通用的 `.agents/skills/` 和 Claude Code 的 `.claude/skills/`。这样 Codex 等支持开放 Agent Skills 目录的工具可以共享一份 skill，同时兼容 Claude Code。
 
 支持的 agent 由 `agents.json` 注册表定义：
 
 | Agent | 格式 | 位置 |
 |-------|------|------|
+| Agent Skills（通用） | skill | `.agents/skills/learn-ssh/` |
 | Codex | skill | `.codex/skills/learn-ssh/` |
 | Claude Code | skill | `.claude/skills/learn-ssh/` |
 | opencode | skill | `.opencode/skills/learn-ssh/` |
@@ -41,37 +42,44 @@ npx --yes github:nichem/LearnSSH
 
 skill 格式的 agent 装标准 `SKILL.md` 目录；rule 格式的 agent 生成一个小规则文件（描述 + 硬性规则 + CLI 速查），指向内置 CLI。
 
-启动器创建在 `./.learn-ssh/bin/learn-ssh`。然后重启 agent，使用 `$learn-ssh`。
+安装器会按平台创建启动器：
+
+- Windows：`.\.learn-ssh\bin\learn-ssh.cmd`
+- macOS/Linux：`./.learn-ssh/bin/learn-ssh`
+
+然后重启 agent，使用 `$learn-ssh`。下文命令默认使用 **Windows PowerShell**，可直接在项目根目录运行；macOS/Linux 用户将启动器路径替换为 `./.learn-ssh/bin/learn-ssh`，并使用 Bash 的 `\` 续行即可。
 
 更多选项：
 
 ```bash
 npx --yes github:nichem/LearnSSH --force              # 覆盖已有安装
-npx --yes github:nichem/LearnSSH --agents codex,claude  # 指定子集，跳过自动探测
+npx --yes github:nichem/LearnSSH --agents agents,claude  # 指定子集，跳过自动探测
 npx --yes github:nichem/LearnSSH --all                # 装全部注册的 agent
 npx --yes github:nichem/LearnSSH --target .myagent/skills  # 任意目录，标准 SKILL.md 格式
-npx --yes github:nichem/LearnSSH --scope user         # 用户级技能目录（~/.claude/skills 等）
+npx --yes github:nichem/LearnSSH --scope user         # 用户级目录（~/.agents/skills、~/.claude/skills）
 ```
 
-`--target` 让安装器可以适配任何支持 Agent Skills（`SKILL.md`）格式的 AI 工具，即使它还没进注册表。要支持新 agent，只需在 `agents.json` 里加一条，不用改安装代码。
+`--agents agents` 可只安装通用 `.agents/skills/` 版本。`--target` 让安装器可以适配任何支持 Agent Skills（`SKILL.md`）格式的 AI 工具，即使它还没进注册表。要支持新 agent，只需在 `agents.json` 里加一条，不用改安装代码。
 
 ## 首次配置
 
-初始化项目级加密存储(在项目根目录运行)：
+运行前面的 `npx` 安装命令时，安装器会自动初始化项目级加密存储，在当前目录创建 `.learn-ssh\`，并将其加入 `.gitignore`，无需再手动执行 `init`。
 
-```bash
-./.learn-ssh/bin/learn-ssh init
+如需覆盖数据存储位置，运行 `npx` 安装命令以及后续每次运行 LearnSSH 时，都必须保持 `LEARN_SSH_HOME` 已设置：
+
+```powershell
+$env:LEARN_SSH_HOME = "D:\path\to\learn-ssh-data"
 ```
 
-这会在当前目录创建 `./.learn-ssh/`，并自动将其加入 `.gitignore`。可通过 `LEARN_SSH_HOME=/path/to/dir` 覆盖存储位置。
+PowerShell 的 `$env:` 赋值只在当前终端会话中有效。如需在新终端中继续使用该目录，请将 `LEARN_SSH_HOME` 配置为持久的用户或系统环境变量。
 
 添加一个密码登录的服务器别名：
 
-```bash
-./.learn-ssh/bin/learn-ssh add \
-  --alias prod-web-1 \
-  --host 203.0.113.10 \
-  --user root \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd add `
+  --alias prod-web-1 `
+  --host 203.0.113.10 `
+  --user root `
   --auth password
 ```
 
@@ -79,14 +87,14 @@ npx --yes github:nichem/LearnSSH --scope user         # 用户级技能目录（
 
 添加一个私钥登录的服务器别名：
 
-```bash
-./.learn-ssh/bin/learn-ssh add \
-  --alias prod-db-1 \
-  --host 203.0.113.20 \
-  --user ubuntu \
-  --auth key \
-  --key-path ~/.ssh/id_ed25519 \
-  --embed-key \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd add `
+  --alias prod-db-1 `
+  --host 203.0.113.20 `
+  --user ubuntu `
+  --auth key `
+  --key-path "$HOME\.ssh\id_ed25519" `
+  --embed-key `
   --ask-passphrase
 ```
 
@@ -94,46 +102,46 @@ npx --yes github:nichem/LearnSSH --scope user         # 用户级技能目录（
 
 列出别名：
 
-```bash
-./.learn-ssh/bin/learn-ssh list
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd list
 ```
 
 查看一个别名，不显示敏感信息：
 
-```bash
-./.learn-ssh/bin/learn-ssh show prod-web-1
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd show prod-web-1
 ```
 
 执行远程命令：
 
-```bash
-./.learn-ssh/bin/learn-ssh exec prod-web-1 -- "hostname && uptime"
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd exec prod-web-1 -- "hostname && uptime"
 ```
 
 输出 JSON：
 
-```bash
-./.learn-ssh/bin/learn-ssh exec prod-web-1 --json -- "hostname"
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd exec prod-web-1 --json -- "hostname"
 ```
 
 上传文件：
 
-```bash
-./.learn-ssh/bin/learn-ssh upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd upload prod-web-1 .\app.tar.gz /tmp/app.tar.gz
 ```
 
 下载文件：
 
-```bash
-./.learn-ssh/bin/learn-ssh download prod-web-1 /var/log/syslog ./syslog
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd download prod-web-1 /var/log/syslog .\syslog
 ```
 
 启动本地隧道：
 
-```bash
-./.learn-ssh/bin/learn-ssh tunnel prod-db-1 \
-  --local-port 15432 \
-  --remote-host 127.0.0.1 \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd tunnel prod-db-1 `
+  --local-port 15432 `
+  --remote-host 127.0.0.1 `
   --remote-port 5432
 ```
 
@@ -164,21 +172,21 @@ skills/learn-ssh/
 
 验证 skill 元数据：
 
-```bash
-python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/learn-ssh
+```powershell
+uv run --with pyyaml "$HOME\.codex\skills\.system\skill-creator\scripts\quick_validate.py" skills\learn-ssh
 ```
 
 检查 CLI 语法：
 
-```bash
-node --check skills/learn-ssh/scripts/ssh-node-ops.mjs
+```powershell
+node --check skills\learn-ssh\scripts\ssh-node-ops.mjs
 ```
 
 ## 打包
 
 预览 npm 包内容：
 
-```bash
+```powershell
 npm pack --dry-run
 ```
 

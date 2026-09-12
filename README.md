@@ -23,12 +23,13 @@ Run from your project root:
 npx --yes github:nichem/LearnSSH
 ```
 
-The installer auto-detects which agents the project already uses (`.codex/`, `.claude/`, `.cursor/`, ...) and installs only for those. With no detection it falls back to **Codex**, **Claude Code**, and **opencode**.
+The installer auto-detects which agent directories the project already uses (`.agents/`, `.claude/`, `.cursor/`, ...) and installs only to detected targets. With no detection, it installs to both the shared `.agents/skills/` directory and Claude Code's `.claude/skills/` directory. This gives Codex and other tools that support the open Agent Skills location one shared copy while retaining Claude Code compatibility.
 
 Supported agents are defined in the `agents.json` registry:
 
 | Agent | Format | Location |
 |-------|--------|----------|
+| Agent Skills (shared) | skill | `.agents/skills/learn-ssh/` |
 | Codex | skill | `.codex/skills/learn-ssh/` |
 | Claude Code | skill | `.claude/skills/learn-ssh/` |
 | opencode | skill | `.opencode/skills/learn-ssh/` |
@@ -41,37 +42,44 @@ Supported agents are defined in the `agents.json` registry:
 
 Skill-format agents get the standard `SKILL.md` directory. Rule-format agents get a small generated rule file (description + hard rules + CLI cheatsheet) pointing at the bundled CLI.
 
-A launcher is created at `./.learn-ssh/bin/learn-ssh`. Then restart your agent and use `$learn-ssh`.
+The installer creates a platform-specific launcher:
+
+- Windows: `.\.learn-ssh\bin\learn-ssh.cmd`
+- macOS/Linux: `./.learn-ssh/bin/learn-ssh`
+
+Then restart your agent and use `$learn-ssh`. The examples below use **Windows PowerShell** and can be pasted directly from the project root. On macOS/Linux, replace the launcher path with `./.learn-ssh/bin/learn-ssh` and use Bash `\` line continuations.
 
 Additional options:
 
 ```bash
 npx --yes github:nichem/LearnSSH --force              # replace an existing install
-npx --yes github:nichem/LearnSSH --agents codex,claude  # explicit subset, skips auto-detect
+npx --yes github:nichem/LearnSSH --agents agents,claude  # explicit subset, skips auto-detect
 npx --yes github:nichem/LearnSSH --all                # every registered agent
 npx --yes github:nichem/LearnSSH --target .myagent/skills  # any dir, standard SKILL.md format
-npx --yes github:nichem/LearnSSH --scope user         # per-user skill dirs (~/.claude/skills, ...)
+npx --yes github:nichem/LearnSSH --scope user         # user dirs (~/.agents/skills, ~/.claude/skills)
 ```
 
-`--target` makes the installer work with any AI tool that loads the Agent Skills (`SKILL.md`) format, even before it is added to the registry. Adding a new agent to the registry is a one-line change in `agents.json` — no installer code changes needed.
+Use `--agents agents` to install only the shared `.agents/skills/` copy. `--target` makes the installer work with any AI tool that loads the Agent Skills (`SKILL.md`) format, even before it is added to the registry. Adding a new agent to the registry is a one-line change in `agents.json` — no installer code changes needed.
 
 ## First-Time Setup
 
-Initialize project-local encrypted storage (run from your project root):
+The preceding `npx` install command automatically initializes project-local encrypted storage, creates `.learn-ssh\` in the current directory, and adds it to `.gitignore`. You do not need to run `init` separately.
 
-```bash
-./.learn-ssh/bin/learn-ssh init
+To override the data storage location, keep `LEARN_SSH_HOME` set both while running the `npx` installer and whenever you later run LearnSSH:
+
+```powershell
+$env:LEARN_SSH_HOME = "D:\path\to\learn-ssh-data"
 ```
 
-This creates `./.learn-ssh/` in the current directory and automatically adds it to `.gitignore`. Override the storage location with `LEARN_SSH_HOME=/path/to/dir`.
+PowerShell `$env:` assignments apply only to the current terminal session. If you want the override to survive new terminals, configure `LEARN_SSH_HOME` as a persistent user or system environment variable.
 
 Add a password-based server alias:
 
-```bash
-./.learn-ssh/bin/learn-ssh add \
-  --alias prod-web-1 \
-  --host 203.0.113.10 \
-  --user root \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd add `
+  --alias prod-web-1 `
+  --host 203.0.113.10 `
+  --user root `
   --auth password
 ```
 
@@ -79,14 +87,14 @@ The real SSH password is typed only into the hidden terminal prompt. Do not pass
 
 Add a key-based server alias:
 
-```bash
-./.learn-ssh/bin/learn-ssh add \
-  --alias prod-db-1 \
-  --host 203.0.113.20 \
-  --user ubuntu \
-  --auth key \
-  --key-path ~/.ssh/id_ed25519 \
-  --embed-key \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd add `
+  --alias prod-db-1 `
+  --host 203.0.113.20 `
+  --user ubuntu `
+  --auth key `
+  --key-path "$HOME\.ssh\id_ed25519" `
+  --embed-key `
   --ask-passphrase
 ```
 
@@ -94,46 +102,46 @@ Add a key-based server alias:
 
 List aliases:
 
-```bash
-./.learn-ssh/bin/learn-ssh list
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd list
 ```
 
 Show one alias without secrets:
 
-```bash
-./.learn-ssh/bin/learn-ssh show prod-web-1
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd show prod-web-1
 ```
 
 Run a remote command:
 
-```bash
-./.learn-ssh/bin/learn-ssh exec prod-web-1 -- "hostname && uptime"
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd exec prod-web-1 -- "hostname && uptime"
 ```
 
 Get JSON output:
 
-```bash
-./.learn-ssh/bin/learn-ssh exec prod-web-1 --json -- "hostname"
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd exec prod-web-1 --json -- "hostname"
 ```
 
 Upload a file:
 
-```bash
-./.learn-ssh/bin/learn-ssh upload prod-web-1 ./app.tar.gz /tmp/app.tar.gz
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd upload prod-web-1 .\app.tar.gz /tmp/app.tar.gz
 ```
 
 Download a file:
 
-```bash
-./.learn-ssh/bin/learn-ssh download prod-web-1 /var/log/syslog ./syslog
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd download prod-web-1 /var/log/syslog .\syslog
 ```
 
 Start a local tunnel:
 
-```bash
-./.learn-ssh/bin/learn-ssh tunnel prod-db-1 \
-  --local-port 15432 \
-  --remote-host 127.0.0.1 \
+```powershell
+.\.learn-ssh\bin\learn-ssh.cmd tunnel prod-db-1 `
+  --local-port 15432 `
+  --remote-host 127.0.0.1 `
   --remote-port 5432
 ```
 
@@ -164,21 +172,21 @@ skills/learn-ssh/
 
 Validate the skill metadata:
 
-```bash
-python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/learn-ssh
+```powershell
+uv run --with pyyaml "$HOME\.codex\skills\.system\skill-creator\scripts\quick_validate.py" skills\learn-ssh
 ```
 
 Check the CLI syntax:
 
-```bash
-node --check skills/learn-ssh/scripts/ssh-node-ops.mjs
+```powershell
+node --check skills\learn-ssh\scripts\ssh-node-ops.mjs
 ```
 
 ## Packaging
 
 Preview the npm package contents:
 
-```bash
+```powershell
 npm pack --dry-run
 ```
 

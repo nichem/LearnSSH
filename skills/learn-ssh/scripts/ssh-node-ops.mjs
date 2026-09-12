@@ -16,6 +16,16 @@ const LOCAL_KEY_PATH = path.join(DATA_DIR, 'master.key');
 const AAD = Buffer.from('learn-ssh:v1');
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = path.dirname(__filename);
+const BOOLEAN_OPTIONS = new Set([
+  'ask-passphrase',
+  'embed-key',
+  'json',
+  'local-key',
+  'no-daemon',
+  'no-login',
+  'stdin',
+  'update',
+]);
 
 function resolveDataDir() {
   if (process.env.LEARN_SSH_HOME) return path.resolve(process.env.LEARN_SSH_HOME);
@@ -90,12 +100,15 @@ function parseArgs(argv) {
         value = raw.slice(eq + 1);
       } else {
         key = raw;
-        const next = argv[i + 1];
-        if (next && !next.startsWith('--')) {
+        if (BOOLEAN_OPTIONS.has(key)) {
+          value = true;
+        } else {
+          const next = argv[i + 1];
+          if (!next || next.startsWith('--')) {
+            throw new Error(`Missing value for --${key}`);
+          }
           value = next;
           i += 1;
-        } else {
-          value = true;
         }
       }
       out[toCamel(key)] = value;
@@ -342,6 +355,12 @@ function saveVault(vault) {
   writeJsonSecure(VAULT_PATH, vault);
 }
 
+function vaultHasEncryptedSecrets() {
+  if (!fs.existsSync(VAULT_PATH)) return false;
+  const vault = loadVault();
+  return Boolean(vault.secrets && typeof vault.secrets === 'object' && Object.keys(vault.secrets).length > 0);
+}
+
 function validateAlias(alias) {
   if (!alias || !/^[\p{L}\p{N}._-]{1,80}$/u.test(alias)) {
     throw new Error('Alias must be 1-80 characters: Unicode letters, digits, dot, underscore, or dash');
@@ -357,6 +376,9 @@ function requireKnownAlias(alias) {
 }
 
 function asPort(value, fallback = 22) {
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`Invalid port: ${value}`);
+  }
   const port = value === undefined ? fallback : Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid port: ${value}`);
@@ -365,6 +387,9 @@ function asPort(value, fallback = 22) {
 }
 
 function asTimeoutMs(value, fallbackSeconds = 30) {
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`Invalid timeout seconds: ${value}`);
+  }
   const seconds = value === undefined ? fallbackSeconds : Number(value);
   if (!Number.isFinite(seconds) || seconds <= 0) {
     throw new Error(`Invalid timeout seconds: ${value}`);
@@ -373,6 +398,9 @@ function asTimeoutMs(value, fallbackSeconds = 30) {
 }
 
 function asIdleTimeoutMs(value, fallbackSeconds = 3600) {
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`Invalid idle timeout seconds: ${value}`);
+  }
   const seconds = value === undefined ? fallbackSeconds : Number(value);
   if (!Number.isFinite(seconds) || seconds < 0) {
     throw new Error(`Invalid idle timeout seconds: ${value}`);
@@ -516,6 +544,10 @@ function getMasterKey({ create = false, forceLocal = false } = {}) {
     throw new Error('Secure storage is not initialized. Run: learn-ssh init');
   }
 
+  if (vaultHasEncryptedSecrets()) {
+    throw new Error(`Encrypted credentials exist in ${VAULT_PATH}, but no master key is available. Restore master.key, the macOS Keychain entry, or SSH_NODE_OPS_MASTER_KEY; refusing to generate a new key`);
+  }
+
   const value = crypto.randomBytes(32).toString('base64');
   if (process.platform === 'darwin' && !forceLocal) {
     keychainSet(value);
@@ -628,16 +660,16 @@ function gitignoreHasEntry(existing, entry) {
 
 function ensureProjectGitignore() {
   const entry = gitignoreEntryForDataDir();
-  if (!entry) return null;
+  if (!entry) return { entry: null, added: false };
   const gitignorePath = path.join(process.cwd(), '.gitignore');
   let existing = '';
   if (fs.existsSync(gitignorePath)) {
     existing = fs.readFileSync(gitignorePath, 'utf8');
   }
-  if (gitignoreHasEntry(existing, entry)) return entry;
+  if (gitignoreHasEntry(existing, entry)) return { entry, added: false };
   const addition = existing && !existing.endsWith('\n') ? `\n${entry}\n` : `${entry}\n`;
   fs.appendFileSync(gitignorePath, addition);
-  return entry;
+  return { entry, added: true };
 }
 
 async function initCommand(opts) {
@@ -645,7 +677,7 @@ async function initCommand(opts) {
   const provider = getMasterKey({ create: true, forceLocal: Boolean(opts.localKey) }).provider;
   if (!fs.existsSync(CONFIG_PATH)) saveConfig(loadConfig());
   if (!fs.existsSync(VAULT_PATH)) saveVault(loadVault());
-  const gitignoreEntry = ensureProjectGitignore();
+  const gitignore = ensureProjectGitignore();
   const result = {
     success: true,
     storageDir: DATA_DIR,
@@ -653,7 +685,8 @@ async function initCommand(opts) {
     vaultPath: VAULT_PATH,
     masterKeyProvider: provider,
     projectLocal: true,
-    gitignoreEntry,
+    gitignoreEntry: gitignore.entry,
+    gitignoreAdded: gitignore.added,
   };
   printResult(opts, result, (value) => {
     const lines = [
@@ -663,7 +696,10 @@ async function initCommand(opts) {
       `vault: ${value.vaultPath}`,
     ];
     if (value.gitignoreEntry) {
-      lines.push(`gitignore: added ${value.gitignoreEntry} to ${path.join(process.cwd(), '.gitignore')}`);
+      const gitignorePath = path.join(process.cwd(), '.gitignore');
+      lines.push(value.gitignoreAdded
+        ? `gitignore: added ${value.gitignoreEntry} to ${gitignorePath}`
+        : `gitignore: ${gitignorePath} already contains ${value.gitignoreEntry}`);
     } else {
       lines.push('gitignore: storage is outside the project root; add an ignore rule manually if it is tracked by git');
     }
@@ -1517,27 +1553,60 @@ async function tunnelCommand(alias, opts) {
     lastActivity = Date.now();
   }
 
+  function reportForwardError(err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const message = `Tunnel forwarding failed (${remoteHost}:${remotePort}): ${error}`;
+    if (wantsJson(opts)) {
+      printJson({ success: false, alias, localHost, localPort, remoteHost, remotePort, error: message });
+    } else {
+      process.stderr.write(`Error: ${message}\n`);
+    }
+  }
+
   const server = net.createServer((socket) => {
+    // A client can send its first packet before SSH has opened the direct-tcpip
+    // channel. Keep the socket paused so that packet remains buffered until the
+    // two streams are piped together.
+    socket.pause();
     touch();
     sockets.add(socket);
-    socket.on('data', touch);
-    socket.on('close', () => sockets.delete(socket));
-    socket.on('error', () => sockets.delete(socket));
+    let stream = null;
+    socket.once('close', () => {
+      sockets.delete(socket);
+      touch();
+      if (stream && !stream.destroyed) stream.destroy();
+    });
+    socket.on('error', () => {
+      if (stream && !stream.destroyed) stream.destroy();
+    });
 
     client.forwardOut(
       socket.remoteAddress || '127.0.0.1',
       socket.remotePort || 0,
       remoteHost,
       remotePort,
-      (err, stream) => {
+      (err, openedStream) => {
         if (err) {
-          socket.destroy(err);
+          reportForwardError(err);
+          socket.destroy();
+          return;
+        }
+        stream = openedStream;
+        if (stopping || socket.destroyed) {
+          stream.destroy();
           return;
         }
         touch();
+        socket.on('data', touch);
         stream.on('data', touch);
-        stream.on('close', touch);
-        stream.on('error', touch);
+        stream.once('close', () => {
+          touch();
+          if (!socket.destroyed) socket.destroy();
+        });
+        stream.on('error', (streamError) => {
+          reportForwardError(streamError);
+          socket.destroy();
+        });
         socket.pipe(stream).pipe(socket);
       },
     );
@@ -1569,7 +1638,7 @@ async function tunnelCommand(alias, opts) {
     `${result.alias} tunnel ${result.localHost}:${result.localPort} -> ${result.remoteHost}:${result.remotePort} idle=${result.idleTimeoutSeconds}s`
   ));
 
-  const stop = (reason = 'stopped') => {
+  const stop = (reason = 'stopped', exitCode = 0) => {
     if (stopping) return;
     stopping = true;
     if (idleTimer) clearInterval(idleTimer);
@@ -1583,12 +1652,28 @@ async function tunnelCommand(alias, opts) {
     }
     server.close();
     closeClients(context);
-    process.exit(0);
+    process.exit(exitCode);
   };
+
+  client.on('error', (err) => {
+    if (stopping) return;
+    reportForwardError(new Error(`SSH connection error: ${err.message}`));
+    stop('ssh-error', 1);
+  });
+  client.once('end', () => {
+    if (stopping) return;
+    reportForwardError(new Error('SSH connection ended'));
+    stop('ssh-end', 1);
+  });
+  client.once('close', () => {
+    if (stopping) return;
+    reportForwardError(new Error('SSH connection closed'));
+    stop('ssh-close', 1);
+  });
 
   if (idleTimeoutMs > 0) {
     idleTimer = setInterval(() => {
-      if (Date.now() - lastActivity >= idleTimeoutMs) {
+      if (sockets.size === 0 && Date.now() - lastActivity >= idleTimeoutMs) {
         stop('idle-timeout');
       }
     }, Math.min(idleTimeoutMs, 60000));
