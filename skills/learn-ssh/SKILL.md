@@ -16,6 +16,9 @@ Use the bundled Node.js CLI for every SSH operation. The model must only work wi
 - Never run `add` or `add --update` for the user when the command may prompt for a password, private key passphrase, or other secret. Show the command and ask the user to run it in their own terminal.
 - Always connect by alias. Do not connect by raw `user@host`, IP, or hostname after a server is configured.
 - Treat `config.json` as non-secret metadata and `vault.json` as off-limits encrypted secret storage.
+- Never place locally generated SSH-operation artifacts in the project root. Put temporary scripts, command files, archives, logs, and intermediate downloads under a unique `./.learn-ssh/work/<alias>/<task-id>/` directory.
+- Prefer `exec --stdin` when a multi-line remote command does not require a reusable local file. When a local work directory is needed, remove its task directory after the operation, including after failure; retain it only when the user requested the files or it is needed for troubleshooting, and report the retained path.
+- Respect an explicit user-selected local destination for a final download or other deliverable. Do not relocate it into the temporary work directory or delete it during cleanup.
 
 ## Install
 
