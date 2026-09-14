@@ -12,6 +12,7 @@ English version: [README.md](README.md)
 - 执行远程命令，并支持按别名复用 SSH 连接。
 - 通过 SFTP 上传和下载文件。
 - 启动本地 SSH 隧道。
+- 按服务器别名维护持久运维记录，并隔离本地任务临时文件。
 - 默认输出简洁的人类可读结果，使用 `--json` 输出结构化 JSON。
 - 在建立 SSH 连接前硬拦截 `rm -rf /` 这类根目录强删命令。
 
@@ -23,7 +24,7 @@ English version: [README.md](README.md)
 npx --yes github:nichem/LearnSSH
 ```
 
-安装器会自动探测项目里已经在用哪些 agent（`.agents/`、`.claude/`、`.cursor/` ...），只为探测到的目标安装。一个都没探测到时，默认同时安装到通用的 `.agents/skills/` 和 Claude Code 的 `.claude/skills/`。这样 Codex 等支持开放 Agent Skills 目录的工具可以共享一份 skill，同时兼容 Claude Code。
+安装器会自动探测项目里已经在用哪些 agent（`.agents/`、`.claude/`、`.cursor/` ...），只为探测到的目标安装。一个都没探测到时，默认同时安装到通用的 `.agents/skills/` 和 Claude Code 的 `.claude/skills/`。这样 Codex 等支持开放 Agent Skills 目录的工具可以共享一份 skill，同时兼容 Claude Code。安装器还会在项目根目录的 `AGENTS.md` 中幂等维护一段 LearnSSH 总规则；已有内容不会被覆盖。
 
 支持的 agent 由 `agents.json` 注册表定义：
 
@@ -63,7 +64,7 @@ npx --yes github:nichem/LearnSSH --scope user         # 用户级目录（~/.age
 
 ## 首次配置
 
-运行前面的 `npx` 安装命令时，安装器会自动初始化项目级加密存储，在当前目录创建 `.learn-ssh\`，并将其加入 `.gitignore`，无需再手动执行 `init`。
+运行前面的 `npx` 安装命令时，安装器会自动初始化项目级加密存储，在当前目录创建 `.learn-ssh\` 和 `.learn-ssh\servers\`，并将 `.learn-ssh\` 加入 `.gitignore`，无需再手动执行 `init`。
 
 如需覆盖数据存储位置，运行 `npx` 安装命令以及后续每次运行 LearnSSH 时，都必须保持 `LEARN_SSH_HOME` 已设置：
 
@@ -72,6 +73,8 @@ $env:LEARN_SSH_HOME = "D:\path\to\learn-ssh-data"
 ```
 
 PowerShell 的 `$env:` 赋值只在当前终端会话中有效。如需在新终端中继续使用该目录，请将 `LEARN_SSH_HOME` 配置为持久的用户或系统环境变量。
+
+服务器别名可使用 Unicode 字母或数字（包括中文）以及 `.`、`_`、`-`。别名必须能安全用作跨平台目录名：不能是 `.`、`..`，不能以 `.` 结尾，不能使用 Windows 保留名，也不能与现有别名仅有规范化后的大小写差异。
 
 添加一个密码登录的服务器别名：
 
@@ -97,6 +100,23 @@ PowerShell 的 `$env:` 赋值只在当前终端会话中有效。如需在新终
   --embed-key `
   --ask-passphrase
 ```
+
+## 服务器记录与本地工作目录
+
+项目根目录的 `AGENTS.md` 会告诉 agent：每次任务首次操作某个服务器别名前，先读取 `.learn-ssh/servers/<别名>/AGENTS.md`。对应文件不存在时由 agent 创建；用户要求记录服务器情况时必须更新，agent 也可以主动保存对后续运维有长期价值的信息。记录中不得包含密码、私钥、passphrase、令牌等秘密。
+
+本地临时文件与长期记录按服务器隔离：
+
+```text
+.learn-ssh/
+`-- servers/
+    `-- <别名>/
+        |-- AGENTS.md
+        `-- work/
+            `-- <任务ID>/
+```
+
+临时脚本、日志、压缩包和中间下载放在任务目录中，任务结束后只清理该任务目录，保留服务器级 `AGENTS.md`。用户明确指定位置的最终下载文件仍写入用户选择的路径。
 
 ## 常用命令
 

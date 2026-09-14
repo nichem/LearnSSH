@@ -12,6 +12,7 @@ Read this in Chinese: [README_CN.md](README_CN.md)
 - Run remote commands with optional per-alias connection reuse.
 - Upload and download files through SFTP.
 - Start local SSH tunnels.
+- Keep durable per-server operational notes while isolating local task artifacts.
 - Print concise human-readable output by default, or JSON with `--json`.
 - Hard-block `rm -rf /` style root deletion before connecting.
 
@@ -23,7 +24,7 @@ Run from your project root:
 npx --yes github:nichem/LearnSSH
 ```
 
-The installer auto-detects which agent directories the project already uses (`.agents/`, `.claude/`, `.cursor/`, ...) and installs only to detected targets. With no detection, it installs to both the shared `.agents/skills/` directory and Claude Code's `.claude/skills/` directory. This gives Codex and other tools that support the open Agent Skills location one shared copy while retaining Claude Code compatibility.
+The installer auto-detects which agent directories the project already uses (`.agents/`, `.claude/`, `.cursor/`, ...) and installs only to detected targets. With no detection, it installs to both the shared `.agents/skills/` directory and Claude Code's `.claude/skills/` directory. This gives Codex and other tools that support the open Agent Skills location one shared copy while retaining Claude Code compatibility. The installer also idempotently maintains a LearnSSH instruction block in the project-root `AGENTS.md` without replacing existing content.
 
 Supported agents are defined in the `agents.json` registry:
 
@@ -63,7 +64,7 @@ Use `--agents agents` to install only the shared `.agents/skills/` copy. `--targ
 
 ## First-Time Setup
 
-The preceding `npx` install command automatically initializes project-local encrypted storage, creates `.learn-ssh\` in the current directory, and adds it to `.gitignore`. You do not need to run `init` separately.
+The preceding `npx` install command automatically initializes project-local encrypted storage, creates `.learn-ssh\` and `.learn-ssh\servers\` in the current directory, and adds `.learn-ssh\` to `.gitignore`. You do not need to run `init` separately.
 
 To override the data storage location, keep `LEARN_SSH_HOME` set both while running the `npx` installer and whenever you later run LearnSSH:
 
@@ -72,6 +73,8 @@ $env:LEARN_SSH_HOME = "D:\path\to\learn-ssh-data"
 ```
 
 PowerShell `$env:` assignments apply only to the current terminal session. If you want the override to survive new terminals, configure `LEARN_SSH_HOME` as a persistent user or system environment variable.
+
+Server aliases may use Unicode letters or digits, including Chinese names, plus `.`, `_`, and `-`. They must be safe cross-platform directory names: aliases cannot be `.`, `..`, end with `.`, use Windows reserved names, or differ from an existing alias only by normalized letter case.
 
 Add a password-based server alias:
 
@@ -97,6 +100,23 @@ Add a key-based server alias:
   --embed-key `
   --ask-passphrase
 ```
+
+## Server Notes and Local Work Directories
+
+The project-root `AGENTS.md` tells agents to read `.learn-ssh/servers/<alias>/AGENTS.md` before the first remote operation on that alias in each task. The agent creates the file when missing, must update it when the user asks to record server information, and may proactively save durable knowledge that will help future operations. Passwords, private keys, passphrases, tokens, and other secrets must never be recorded.
+
+Local task artifacts and durable notes are isolated by server:
+
+```text
+.learn-ssh/
+`-- servers/
+    `-- <alias>/
+        |-- AGENTS.md
+        `-- work/
+            `-- <task-id>/
+```
+
+Temporary scripts, logs, archives, and intermediate downloads belong in the task directory. Cleanup removes only that task directory and preserves the server-level `AGENTS.md`. Final downloads with an explicit user-selected destination still go to that destination.
 
 ## Common Commands
 

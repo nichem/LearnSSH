@@ -367,11 +367,34 @@ function validateAlias(alias) {
   }
 }
 
-function requireKnownAlias(alias) {
+function validateAliasDirectoryName(alias) {
   validateAlias(alias);
+  const windowsReserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
+  if (alias === '.' || alias === '..' || alias.endsWith('.') || windowsReserved.test(alias)) {
+    throw new Error('Alias must be a safe cross-platform directory name: not . or .., no trailing dot, and not a Windows reserved name');
+  }
+}
+
+function aliasDirectoryKey(alias) {
+  return alias.normalize('NFC').toLocaleLowerCase('en-US');
+}
+
+function findAliasDirectoryConflict(servers, alias) {
+  const key = aliasDirectoryKey(alias);
+  return Object.keys(servers || {}).find((configured) => (
+    configured !== alias && aliasDirectoryKey(configured) === key
+  ));
+}
+
+function requireKnownAlias(alias) {
+  validateAliasDirectoryName(alias);
   const config = loadConfig();
   if (!config.servers || !config.servers[alias]) {
     throw new Error(`Unknown alias: ${alias}`);
+  }
+  const conflict = findAliasDirectoryConflict(config.servers, alias);
+  if (conflict) {
+    throw new Error(`Alias conflicts with existing alias on case-insensitive filesystems: ${conflict}`);
   }
 }
 
@@ -710,7 +733,7 @@ async function initCommand(opts) {
 async function addCommand(opts) {
   requireNoSecretFlags(opts);
   const alias = opts.alias;
-  validateAlias(alias);
+  validateAliasDirectoryName(alias);
   const auth = opts.auth;
   if (!['password', 'key', 'agent'].includes(auth)) {
     throw new Error('--auth is the authentication mode, not the SSH password. Use --auth password, then type the real password into the hidden terminal prompt. Allowed values: password, key, agent');
@@ -721,6 +744,10 @@ async function addCommand(opts) {
   const port = asPort(opts.port, 22);
 
   const config = loadConfig();
+  const directoryConflict = findAliasDirectoryConflict(config.servers, alias);
+  if (directoryConflict) {
+    throw new Error(`Alias conflicts with existing alias on case-insensitive filesystems: ${directoryConflict}`);
+  }
   const oldServer = config.servers[alias];
   const exists = Boolean(oldServer);
   if (exists && !opts.update) {

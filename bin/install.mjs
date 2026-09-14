@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const SKILL_NAME = "learn-ssh";
 const RULE_MARKER = "<!-- learn-ssh generated rule -->";
+const AGENTS_BLOCK_START = "<!-- learn-ssh server context: start -->";
+const AGENTS_BLOCK_END = "<!-- learn-ssh server context: end -->";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(dirname, "..");
 const sourceSkillRoot = path.join(packageRoot, "skills", SKILL_NAME);
@@ -313,6 +315,62 @@ function ensureGitignoreEntry(projectRoot) {
   return true;
 }
 
+function renderProjectAgentsBlock() {
+  return `${AGENTS_BLOCK_START}
+## LearnSSH Server Context
+
+- Before the first remote operation on a configured server alias in each task, read \`./.learn-ssh/servers/<alias>/AGENTS.md\`. Create it if it does not exist.
+- When the user asks to record server information, update that server's \`AGENTS.md\`. You may also record durable operational knowledge that will help future work without asking first.
+- Preserve existing notes, timestamp information that may become stale, and never store passwords, private keys, passphrases, tokens, or other secrets.
+- Put temporary scripts, logs, archives, and intermediate downloads under a unique \`./.learn-ssh/servers/<alias>/work/<task-id>/\` directory. Remove only the task directory when cleaning up and always preserve the server-level \`AGENTS.md\`.
+${AGENTS_BLOCK_END}`;
+}
+
+function ensureProjectAgentsInstructions(projectRoot) {
+  const agentsPath = path.join(projectRoot, "AGENTS.md");
+  let existing = "";
+  try {
+    const stat = fs.lstatSync(agentsPath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Refusing to modify symbolic link: ${agentsPath}`);
+    }
+    if (!stat.isFile()) {
+      throw new Error(`Project AGENTS.md is not a regular file: ${agentsPath}`);
+    }
+    existing = fs.readFileSync(agentsPath, "utf8");
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  const startCount = existing.split(AGENTS_BLOCK_START).length - 1;
+  const endCount = existing.split(AGENTS_BLOCK_END).length - 1;
+  if (startCount !== endCount || startCount > 1) {
+    throw new Error(`Malformed LearnSSH block in ${agentsPath}`);
+  }
+
+  const newline = existing.includes("\r\n") ? "\r\n" : "\n";
+  const block = renderProjectAgentsBlock().replace(/\n/g, newline);
+  let updated;
+  if (startCount === 1) {
+    const start = existing.indexOf(AGENTS_BLOCK_START);
+    const end = existing.indexOf(AGENTS_BLOCK_END, start + AGENTS_BLOCK_START.length);
+    if (end < start) throw new Error(`Malformed LearnSSH block in ${agentsPath}`);
+    updated = `${existing.slice(0, start)}${block}${existing.slice(end + AGENTS_BLOCK_END.length)}`;
+  } else {
+    const separator = existing.length === 0
+      ? ""
+      : existing.endsWith(`${newline}${newline}`)
+        ? ""
+        : existing.endsWith(newline)
+          ? newline
+          : `${newline}${newline}`;
+    updated = `${existing}${separator}${block}${newline}`;
+  }
+
+  if (updated === existing) return { path: agentsPath, changed: false };
+  fs.writeFileSync(agentsPath, updated, "utf8");
+  return { path: agentsPath, changed: true };
+}
+
 function displayPath(target, projectRoot = process.cwd()) {
   const relative = path.relative(projectRoot, target);
   const isOutside = relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
@@ -411,6 +469,8 @@ function install(opts) {
   }
 
   fs.mkdirSync(learnSshDir, { recursive: true });
+  const serversDir = path.join(learnSshDir, "servers");
+  fs.mkdirSync(serversDir, { recursive: true });
   const scriptsSrc = path.join(sourceSkillRoot, "scripts");
   fs.cpSync(scriptsSrc, scriptsDir, { recursive: true, force: true, verbatimSymlinks: false });
   installDependencies(scriptsDir);
@@ -433,12 +493,15 @@ function install(opts) {
   if (opts.scope === "project") {
     ensureGitignoreEntry(projectRoot);
   }
+  const projectAgents = ensureProjectAgentsInstructions(projectRoot);
 
   const changed = installed.filter((item) => !item.skipped).map((item) => item.label);
   const kept = installed.filter((item) => item.skipped).map((item) => item.label);
   console.log("LearnSSH ready");
   console.log(`CLI: ${displayPath(scriptsDir, projectRoot)}`);
   console.log(`Storage: ${displayPath(storage.storageDir, projectRoot)} (${storage.masterKeyProvider})`);
+  console.log(`Server context: ${displayPath(serversDir, projectRoot)}`);
+  console.log(`Project instructions: ${displayPath(projectAgents.path, projectRoot)}${projectAgents.changed ? " (updated)" : ""}`);
   if (changed.length) console.log(`Skills installed: ${changed.join(", ")}`);
   if (kept.length) console.log(`Skills kept: ${kept.join(", ")}`);
   if (launcher) console.log(`Launcher: ${displayPath(launcher, projectRoot)}`);
