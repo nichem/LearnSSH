@@ -19,6 +19,7 @@ const SCRIPT_DIR = path.dirname(__filename);
 const BOOLEAN_OPTIONS = new Set([
   'ask-passphrase',
   'embed-key',
+  'help',
   'json',
   'local-key',
   'no-daemon',
@@ -26,10 +27,33 @@ const BOOLEAN_OPTIONS = new Set([
   'stdin',
   'update',
 ]);
+const COMMAND_OPTIONS = {
+  init: ['localKey'],
+  add: ['alias', 'host', 'user', 'username', 'auth', 'port', 'description', 'tags', 'proxyJump', 'keyPath', 'embedKey', 'askPassphrase', 'update'],
+  list: [],
+  show: [],
+  remove: [],
+  exec: ['stdin', 'command', 'timeout', 'daemonIdleTimeout', 'noDaemon', 'noLogin'],
+  daemon: ['idleTimeout', 'daemonIdleTimeout'],
+  upload: [],
+  download: [],
+  tunnel: ['localPort', 'localHost', 'remotePort', 'remoteHost', 'idleTimeout'],
+  paths: [],
+};
+const KNOWN_OPTIONS = new Set([
+  ...BOOLEAN_OPTIONS,
+  ...Object.values(COMMAND_OPTIONS).flat().map((key) => key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)),
+]);
+const SECRET_OPTIONS = new Set(['password', 'passphrase', 'private-key', 'privateKey', 'secret']);
 
 function resolveDataDir() {
   if (process.env.LEARN_SSH_HOME) return path.resolve(process.env.LEARN_SSH_HOME);
   return path.join(process.cwd(), '.learn-ssh');
+}
+
+function isProjectLocalStorage() {
+  const relative = path.relative(process.cwd(), DATA_DIR);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 function keychainService() {
@@ -38,7 +62,7 @@ function keychainService() {
 }
 
 function usage() {
-  return `ssh-node-ops
+  return `learn-ssh
 
 Usage:
   learn-ssh init [--local-key]
@@ -55,6 +79,8 @@ Usage:
   learn-ssh download <alias> <remote-path> <local-path>
   learn-ssh tunnel <alias> --local-port <port> --remote-port <port> [--remote-host <host>] [--idle-timeout <seconds>]
   learn-ssh paths
+  learn-ssh help [command]
+  learn-ssh <command> --help
 
 Add options:
   --port <port>             Default: 22
@@ -77,13 +103,220 @@ Exec options:
   --no-login                Run raw without a login+interactive shell (skip bashrc/profile/nvm).
 
 Output options:
-  --json                    Print the machine-readable JSON response.
+  --json                    Print JSON. Tunnel mode streams one JSON event per line.
 
 Secrets are never accepted as flags. Passwords and passphrases are terminal prompts only.`;
 }
 
+function addUsage() {
+  return `learn-ssh add
+
+Usage:
+  learn-ssh add --alias <name> --host <host> --user <user> --auth <password|key|agent> [options]
+
+Required options:
+  --alias <name>            Server alias used by later commands
+  --host <host>             SSH hostname or IP address
+  --user <user>             SSH username
+  --auth <mode>             Authentication mode: password, key, or agent
+
+Other options:
+  --port <port>             SSH port. Default: 22.
+  --description <text>      Description shown with the alias
+  --tags <a,b,c>            Comma-separated tags
+  --proxy-jump <alias>      Connect through an existing server alias
+  --key-path <path>         Private key path for key authentication
+  --embed-key               Encrypt the private key content in the vault; requires --key-path
+  --ask-passphrase          Prompt for the private key passphrase
+  --update                  Replace an existing alias
+  --json                    Print the machine-readable JSON response
+  --help, -h                Show this help
+
+Examples:
+  learn-ssh add --alias web --host 203.0.113.10 --user root --auth password
+  learn-ssh add --alias db --host 203.0.113.20 --user ubuntu --auth key --key-path ~/.ssh/id_ed25519 --embed-key --ask-passphrase
+  learn-ssh add --alias bastion --host bastion.example.com --user ops --auth agent
+
+Passwords and passphrases are entered at hidden terminal prompts, never as flags.`;
+}
+
+function commandUsage(command, args = []) {
+  const commonOptions = `  --json                    Print the machine-readable JSON response
+  --help, -h                Show this help`;
+
+  if (command === 'add') return addUsage();
+  if (command === 'init') return `learn-ssh init
+
+Usage:
+  learn-ssh init [--local-key] [--json]
+
+Initialize project-local encrypted storage.
+
+Options:
+  --local-key               Store the master key in a local file instead of macOS Keychain
+${commonOptions}`;
+  if (command === 'list') return `learn-ssh list
+
+Usage:
+  learn-ssh list [--json]
+
+List configured aliases and their non-secret metadata.
+
+Options:
+${commonOptions}`;
+  if (command === 'show') return `learn-ssh show
+
+Usage:
+  learn-ssh show <alias> [--json]
+
+Show one alias without displaying secrets.
+
+Options:
+${commonOptions}`;
+  if (command === 'remove') return `learn-ssh remove
+
+Usage:
+  learn-ssh remove <alias> [--json]
+
+Remove the alias and its encrypted secret.
+
+Options:
+${commonOptions}`;
+  if (command === 'exec') return `learn-ssh exec
+
+Usage:
+  learn-ssh exec <alias> [options] -- <command>
+  learn-ssh exec <alias> [options] --stdin
+
+Run a remote command. By default, the connection is reused and the command runs through bash -lic.
+
+Options:
+  --stdin                   Read the remote command from standard input
+  --command <text>          Provide the remote command as an option
+  --timeout <seconds>       Remote command timeout. Default: 30.
+  --daemon-idle-timeout <seconds>
+                            Reused connection idle timeout. Default: 3600. Use 0 to disable.
+  --no-daemon               Run once without connection reuse
+  --no-login                Run the command directly without loading login and interactive shell settings
+${commonOptions}`;
+  if (command === 'daemon') {
+    let subcommand;
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i];
+      if (arg === '--') break;
+      if (arg === '--help' || arg === '-h' || arg.startsWith('--help=')) continue;
+      if (arg.startsWith('--')) {
+        if (!arg.includes('=') && !BOOLEAN_OPTIONS.has(arg.slice(2))) i += 1;
+        continue;
+      }
+      subcommand = arg;
+      break;
+    }
+    if (subcommand && !['start', 'status', 'stop'].includes(subcommand)) {
+      throw new Error(`Unknown daemon subcommand: ${subcommand}. Run learn-ssh daemon --help.`);
+    }
+    if (!subcommand) return `learn-ssh daemon
+
+Usage:
+  learn-ssh daemon start <alias> [--idle-timeout <seconds>]
+  learn-ssh daemon status [alias]
+  learn-ssh daemon stop <alias>
+
+Use "learn-ssh daemon <subcommand> --help" for details.
+
+Options:
+${commonOptions}`;
+    if (subcommand === 'start') return `learn-ssh daemon start
+
+Usage:
+  learn-ssh daemon start <alias> [--idle-timeout <seconds>] [--json]
+
+Start or reuse an SSH connection for the alias.
+
+Options:
+  --idle-timeout <seconds>   Stop after this many idle seconds. Default: 3600. Use 0 to disable.
+  --daemon-idle-timeout <seconds>
+                            Alternative to --idle-timeout
+${commonOptions}`;
+    if (subcommand === 'status') return `learn-ssh daemon status
+
+Usage:
+  learn-ssh daemon status [alias] [--json]
+
+Show connection status for one alias or all configured aliases.
+
+Options:
+${commonOptions}`;
+    if (subcommand === 'stop') return `learn-ssh daemon stop
+
+Usage:
+  learn-ssh daemon stop <alias> [--json]
+
+Stop the alias's reusable SSH connection.
+
+Options:
+${commonOptions}`;
+  }
+  if (command === 'upload') return `learn-ssh upload
+
+Usage:
+  learn-ssh upload <alias> <local-path> <remote-path> [--json]
+
+Upload a local file to the remote server over SFTP.
+
+Options:
+${commonOptions}`;
+  if (command === 'download') return `learn-ssh download
+
+Usage:
+  learn-ssh download <alias> <remote-path> <local-path> [--json]
+
+Download a remote file over SFTP.
+
+Options:
+${commonOptions}`;
+  if (command === 'tunnel') return `learn-ssh tunnel
+
+Usage:
+  learn-ssh tunnel <alias> --local-port <port> --remote-port <port> [options]
+
+Forward a local TCP port to a remote host through the SSH connection.
+
+Options:
+  --local-port <port>       Local listening port (required)
+  --local-host <host>       Local listening address. Default: 127.0.0.1.
+  --remote-port <port>      Destination port (required)
+  --remote-host <host>      Destination address. Default: 127.0.0.1.
+  --idle-timeout <seconds>  Close after this many idle seconds. Default: 3600. Use 0 to disable.
+  --json                    Stream one JSON event per line (started, forward-error, closed)
+  --help, -h                Show this help`;
+  if (command === 'paths') return `learn-ssh paths
+
+Usage:
+  learn-ssh paths [--json]
+
+Show script and project-local storage paths.
+
+Options:
+${commonOptions}`;
+  throw new Error(`Unknown command: ${command}`);
+}
+
+function requestsHelp(argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--') break;
+    if (arg === '--help' || arg === '-h' || arg === '--help=true' || arg === '--help=1') return true;
+    if (arg.startsWith('--') && !arg.includes('=') && !BOOLEAN_OPTIONS.has(arg.slice(2)) && argv[i + 1] === '-h') {
+      i += 1;
+    }
+  }
+  return false;
+}
+
 function parseArgs(argv) {
-  const out = { _: [] };
+  const out = Object.create(null);
+  out._ = [];
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--') {
@@ -93,13 +326,17 @@ function parseArgs(argv) {
     if (token.startsWith('--')) {
       const raw = token.slice(2);
       const eq = raw.indexOf('=');
-      let key;
+      const key = eq >= 0 ? raw.slice(0, eq) : raw;
+      if (SECRET_OPTIONS.has(key)) {
+        throw new Error(`Do not pass --${key} as a flag; use the secure terminal prompt`);
+      }
+      if (!KNOWN_OPTIONS.has(key)) {
+        throw new Error(`Unknown option: --${key}. Run learn-ssh --help for available options.`);
+      }
       let value;
       if (eq >= 0) {
-        key = raw.slice(0, eq);
         value = raw.slice(eq + 1);
       } else {
-        key = raw;
         if (BOOLEAN_OPTIONS.has(key)) {
           value = true;
         } else {
@@ -111,6 +348,11 @@ function parseArgs(argv) {
           i += 1;
         }
       }
+      if (BOOLEAN_OPTIONS.has(key) && eq >= 0) {
+        if (value === 'true' || value === '1') value = true;
+        else if (value === 'false' || value === '0') value = false;
+        else throw new Error(`Invalid boolean value for --${key}: ${value}. Use true or false.`);
+      }
       out[toCamel(key)] = value;
     } else {
       out._.push(token);
@@ -119,12 +361,60 @@ function parseArgs(argv) {
   return out;
 }
 
+function validateCommandArgs(command, opts) {
+  if (!Object.hasOwn(COMMAND_OPTIONS, command)) {
+    throw new Error(`Unknown command: ${command}. Run learn-ssh --help for available commands.`);
+  }
+
+  requireNoSecretFlags(opts);
+  const allowed = new Set(['json', 'help', ...COMMAND_OPTIONS[command]]);
+  if (command === 'daemon' && !['start', 'serve'].includes(opts._[0])) {
+    allowed.delete('idleTimeout');
+    allowed.delete('daemonIdleTimeout');
+  }
+  for (const key of Object.keys(opts)) {
+    if (key === '_') continue;
+    if (!allowed.has(key)) {
+      const flag = key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
+      throw new Error(`Unknown option for ${command}: --${flag}. Run learn-ssh ${command} --help.`);
+    }
+  }
+
+  const count = opts._.length;
+  const requireCount = (min, max, expected) => {
+    if (count < min) throw new Error(`${command} requires ${expected}. Run learn-ssh ${command} --help.`);
+    if (count > max) throw new Error(`${command} received unexpected extra arguments. Run learn-ssh ${command} --help.`);
+  };
+  if (['init', 'add', 'list', 'paths'].includes(command)) requireCount(0, 0, 'no positional arguments');
+  if (['show', 'remove', 'tunnel'].includes(command)) requireCount(1, 1, '<alias>');
+  if (['upload', 'download'].includes(command)) {
+    requireCount(3, 3, command === 'upload'
+      ? '<alias> <local-path> <remote-path>'
+      : '<alias> <remote-path> <local-path>');
+  }
+  if (command === 'exec') {
+    requireCount(1, opts.stdin || opts.command !== undefined ? 1 : Infinity, '<alias>');
+  }
+  if (command === 'daemon') {
+    const subcommand = opts._[0];
+    if (!['start', 'status', 'stop', 'serve'].includes(subcommand)) {
+      throw new Error('daemon requires one of: start, status, stop. Run learn-ssh daemon --help.');
+    }
+    requireCount(subcommand === 'status' ? 1 : 2, subcommand === 'status' ? 2 : 2,
+      subcommand === 'status' ? 'status [alias]' : `${subcommand} <alias>`);
+  }
+}
+
 function toCamel(value) {
   return value.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
 }
 
 function printJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function printJsonLine(value) {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
 function wantsJson(opts = {}) {
@@ -341,6 +631,12 @@ function writeJsonSecure(file, value) {
 
 function loadConfig() {
   return readJson(CONFIG_PATH, { version: 1, servers: {} });
+}
+
+function noServersMessage() {
+  return fs.existsSync(CONFIG_PATH)
+    ? 'No servers configured.'
+    : `No servers configured: ${CONFIG_PATH} does not exist. Check the current directory or LEARN_SSH_HOME.`;
 }
 
 function saveConfig(config) {
@@ -707,7 +1003,7 @@ async function initCommand(opts) {
     configPath: CONFIG_PATH,
     vaultPath: VAULT_PATH,
     masterKeyProvider: provider,
-    projectLocal: true,
+    projectLocal: isProjectLocalStorage(),
     gitignoreEntry: gitignore.entry,
     gitignoreAdded: gitignore.added,
   };
@@ -733,14 +1029,16 @@ async function initCommand(opts) {
 async function addCommand(opts) {
   requireNoSecretFlags(opts);
   const alias = opts.alias;
+  if (!alias) throw new Error('--alias is required. Run learn-ssh add --help.');
   validateAliasDirectoryName(alias);
+  if (!opts.host) throw new Error('--host is required. Run learn-ssh add --help.');
+  const username = opts.user || opts.username;
+  if (!username) throw new Error('--user is required. Run learn-ssh add --help.');
   const auth = opts.auth;
+  if (!auth) throw new Error('--auth is required. Use password, key, or agent. Run learn-ssh add --help.');
   if (!['password', 'key', 'agent'].includes(auth)) {
     throw new Error('--auth is the authentication mode, not the SSH password. Use --auth password, then type the real password into the hidden terminal prompt. Allowed values: password, key, agent');
   }
-  if (!opts.host) throw new Error('--host is required');
-  const username = opts.user || opts.username;
-  if (!username) throw new Error('--user is required');
   const port = asPort(opts.port, 22);
 
   const config = loadConfig();
@@ -851,11 +1149,12 @@ async function listCommand(opts) {
   const aliases = Object.keys(config.servers).sort();
   const result = {
     success: true,
+    storageInitialized: fs.existsSync(CONFIG_PATH),
     count: aliases.length,
     servers: aliases.map((alias) => sanitizeServer(config.servers[alias])),
   };
   printResult(opts, result, (value) => {
-    if (value.count === 0) return 'No servers configured.';
+    if (value.count === 0) return noServersMessage();
     return [`${value.count} server(s):`, ...value.servers.map((server) => `- ${formatServerLine(server)}`)].join('\n');
   });
 }
@@ -878,7 +1177,7 @@ async function removeCommand(alias, opts) {
   saveConfig(config);
   saveVault(vault);
   printResult(opts, { success: true, alias, removed: existed }, (value) => (
-    value.removed ? `Removed alias: ${value.alias}` : `Alias not found: ${value.alias}`
+    value.removed ? `Removed alias: ${value.alias}` : `Alias already absent: ${value.alias}`
   ));
 }
 
@@ -1103,11 +1402,12 @@ function quoteWindowsCommandArg(arg) {
 // forever. Verified fix: create the daemon via PowerShell Start-Process
 // (ShellExecute path, bInheritHandles=FALSE), so its handle table never
 // contains the caller's pipes.
-function spawnDaemonViaStartProcess(args) {
+function spawnDaemonViaStartProcess(args, startupErrorFile) {
   const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
   const argLine = args.map((a) => `"${String(a).replace(/"/g, '\\"')}"`).join(' ');
   const script = [
     `$env:LEARN_SSH_HOME = ${psQuote(DATA_DIR)}`,
+    `$env:LEARN_SSH_DAEMON_STARTUP_ERROR_FILE = ${psQuote(startupErrorFile)}`,
     `$p = Start-Process -FilePath ${psQuote(process.execPath)} -ArgumentList ${psQuote(argLine)} -WorkingDirectory ${psQuote(path.dirname(DATA_DIR))} -WindowStyle Hidden -PassThru`,
     'if ($null -eq $p) { exit 1 }',
     'Write-Output $p.Id',
@@ -1129,16 +1429,16 @@ function spawnDaemonViaStartProcess(args) {
   return null;
 }
 
-function spawnDetachedDaemon(args) {
+function spawnDetachedDaemon(args, startupErrorFile) {
   if (process.platform === 'win32') {
-    const viaStartProcess = spawnDaemonViaStartProcess(args);
+    const viaStartProcess = spawnDaemonViaStartProcess(args, startupErrorFile);
     if (viaStartProcess) return viaStartProcess;
     process.stderr.write('learn-ssh: Start-Process launch failed, falling back to plain spawn (cold start may keep the calling tool busy)\n');
   }
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, LEARN_SSH_HOME: DATA_DIR },
+    env: { ...process.env, LEARN_SSH_HOME: DATA_DIR, LEARN_SSH_DAEMON_STARTUP_ERROR_FILE: startupErrorFile },
     cwd: path.dirname(DATA_DIR),
     windowsHide: true,
   });
@@ -1163,40 +1463,57 @@ async function startDaemon(alias, idleTimeoutSeconds) {
     '--idle-timeout',
     String(idleTimeoutSeconds),
   ];
-  const child = spawnDetachedDaemon(args);
-  const startedAt = Date.now();
-  const deadline = startedAt + DAEMON_START_TIMEOUT_MS;
-  let lastError = null;
-  let lastProgressAt = 0;
-  process.stderr.write(`learn-ssh: starting daemon for ${alias} (pid=${child.pid || '?'})...\n`);
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    if (child.pid && !isPidAlive(child.pid)) {
-      removeDaemonInfo(alias);
-      throw new Error(`Unable to start daemon for alias: ${alias} (process exited early)`);
-    }
-    const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
-    if (elapsedSec > 0 && elapsedSec % 5 === 0 && elapsedSec !== lastProgressAt) {
-      lastProgressAt = elapsedSec;
-      process.stderr.write(`learn-ssh: waiting for daemon ${alias}... ${elapsedSec}s\n`);
-    }
+  ensureStorage();
+  const startupErrorFile = path.join(DATA_DIR, `daemon-startup-${daemonId(alias)}-${process.pid}-${crypto.randomBytes(6).toString('hex')}.txt`);
+  fs.writeFileSync(startupErrorFile, '', { mode: 0o600, flag: 'wx' });
+  const startupError = () => {
     try {
-      if (await pingDaemon(alias)) {
-        process.stderr.write(`learn-ssh: daemon ready for ${alias} (${elapsedSec}s)\n`);
-        return { reused: false };
-      }
-    } catch (err) {
-      lastError = err;
+      return fs.readFileSync(startupErrorFile, 'utf8').trim().slice(0, 1000);
+    } catch {
+      return '';
     }
-  }
+  };
 
   try {
-    child.kill();
-  } catch {
-    // Best effort.
+    const child = spawnDetachedDaemon(args, startupErrorFile);
+    const startedAt = Date.now();
+    const deadline = startedAt + DAEMON_START_TIMEOUT_MS;
+    let lastError = null;
+    let lastProgressAt = 0;
+    process.stderr.write(`learn-ssh: starting daemon for ${alias} (pid=${child.pid || '?'})...\n`);
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      if (child.pid && !isPidAlive(child.pid)) {
+        removeDaemonInfo(alias);
+        const reason = startupError();
+        throw new Error(`Unable to start daemon for alias: ${alias} (process exited early${reason ? `: ${reason}` : ''})`);
+      }
+      const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+      if (elapsedSec > 0 && elapsedSec % 5 === 0 && elapsedSec !== lastProgressAt) {
+        lastProgressAt = elapsedSec;
+        process.stderr.write(`learn-ssh: waiting for daemon ${alias}... ${elapsedSec}s\n`);
+      }
+      try {
+        if (await pingDaemon(alias)) {
+          process.stderr.write(`learn-ssh: daemon ready for ${alias} (${elapsedSec}s)\n`);
+          return { reused: false };
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    try {
+      child.kill();
+    } catch {
+      // Best effort.
+    }
+    removeDaemonInfo(alias);
+    const reason = startupError() || lastError?.message;
+    throw new Error(`Unable to start daemon for alias: ${alias}${reason ? ` (${reason})` : ''}`);
+  } finally {
+    fs.rmSync(startupErrorFile, { force: true });
   }
-  removeDaemonInfo(alias);
-  throw new Error(`Unable to start daemon for alias: ${alias}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
 // Wrap a command so the remote shell loads the full login + interactive
@@ -1415,6 +1732,7 @@ async function daemonServeCommand(alias, opts) {
     idleTimeoutSeconds: idleTimeoutMs / 1000,
     startedAt: new Date(startedAt).toISOString(),
   });
+  delete process.env.LEARN_SSH_DAEMON_STARTUP_ERROR_FILE;
 
   if (idleTimeoutMs > 0) {
     idleTimer = setInterval(() => {
@@ -1440,7 +1758,12 @@ async function execViaDaemon(alias, command, opts) {
 }
 
 async function execCommand(alias, command, opts) {
-  if (!command) throw new Error('Remote command is required after --');
+  if (!String(command || '').trim()) {
+    const source = opts.stdin ? 'standard input with --stdin'
+      : opts.command !== undefined ? '--command'
+        : 'after --';
+    throw new Error(`Remote command is required ${source}. Run learn-ssh exec --help.`);
+  }
   assertNoForbiddenRootRemoval(command);
   if (!opts.noDaemon) {
     const { result, reused } = await execViaDaemon(alias, command, opts);
@@ -1584,7 +1907,7 @@ async function tunnelCommand(alias, opts) {
     const error = err instanceof Error ? err.message : String(err);
     const message = `Tunnel forwarding failed (${remoteHost}:${remotePort}): ${error}`;
     if (wantsJson(opts)) {
-      printJson({ success: false, alias, localHost, localPort, remoteHost, remotePort, error: message });
+      printJsonLine({ event: 'forward-error', success: false, alias, localHost, localPort, remoteHost, remotePort, error: message });
     } else {
       process.stderr.write(`Error: ${message}\n`);
     }
@@ -1661,9 +1984,13 @@ async function tunnelCommand(alias, opts) {
       ? 'Tunnel is running until this process is stopped or idle timeout is reached.'
       : 'Tunnel is running until this process is stopped.',
   };
-  printResult(opts, value, (result) => (
-    `${result.alias} tunnel ${result.localHost}:${result.localPort} -> ${result.remoteHost}:${result.remotePort} idle=${result.idleTimeoutSeconds}s`
-  ));
+  if (wantsJson(opts)) {
+    printJsonLine({ event: 'started', ...value });
+  } else {
+    printResult(opts, value, (result) => (
+      `${result.alias} tunnel ${result.localHost}:${result.localPort} -> ${result.remoteHost}:${result.remotePort} idle=${result.idleTimeoutSeconds}s`
+    ));
+  }
 
   const stop = (reason = 'stopped', exitCode = 0) => {
     if (stopping) return;
@@ -1672,7 +1999,9 @@ async function tunnelCommand(alias, opts) {
     for (const socket of sockets) {
       socket.destroy();
     }
-    if (reason === 'idle-timeout') {
+    if (wantsJson(opts)) {
+      printJsonLine({ event: 'closed', success: exitCode === 0, alias, closed: true, reason });
+    } else if (reason === 'idle-timeout') {
       printResult(opts, { success: true, alias, closed: true, reason }, (result) => (
         `${result.alias} tunnel closed: ${result.reason}`
       ));
@@ -1764,8 +2093,8 @@ async function daemonCommand(opts) {
     for (const configuredAlias of aliases) {
       daemons.push(await daemonStatus(configuredAlias));
     }
-    printResult(opts, { success: true, daemons }, (value) => (
-      value.daemons.length > 0 ? value.daemons.map(formatDaemonLine).join('\n') : 'No servers configured.'
+    printResult(opts, { success: true, storageInitialized: fs.existsSync(CONFIG_PATH), daemons }, (value) => (
+      value.daemons.length > 0 ? value.daemons.map(formatDaemonLine).join('\n') : noServersMessage()
     ));
     return;
   }
@@ -1805,7 +2134,7 @@ async function pathsCommand(opts) {
     vaultPath: VAULT_PATH,
     localKeyPath: LOCAL_KEY_PATH,
     masterKeyProvider: provider,
-    projectLocal: true,
+    projectLocal: isProjectLocalStorage(),
   };
   printResult(opts, result, (value) => [
     `script: ${value.scriptDir}`,
@@ -1820,12 +2149,25 @@ async function pathsCommand(opts) {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const opts = parseArgs(rest);
 
-  if (!command || command === 'help' || command === '--help' || command === '-h') {
+  if (!command || command === '--help' || command === '-h') {
     process.stdout.write(`${usage()}\n`);
     return;
   }
+
+  if (command === 'help') {
+    const [topic, ...topicArgs] = rest;
+    process.stdout.write(`${topic && topic !== 'help' && topic !== '--help' && topic !== '-h' ? commandUsage(topic, topicArgs) : usage()}\n`);
+    return;
+  }
+
+  if (requestsHelp(rest)) {
+    process.stdout.write(`${commandUsage(command, rest)}\n`);
+    return;
+  }
+
+  const opts = parseArgs(rest);
+  validateCommandArgs(command, opts);
 
   if (command === 'init') return initCommand(opts);
   if (command === 'add') return addCommand(opts);
@@ -1837,8 +2179,9 @@ async function main() {
 
   if (command === 'exec') {
     const alias = opts._[0];
-    const remoteCommand = opts.stdin ? await readStdinText() : (opts.command ? String(opts.command) : opts._.slice(1).join(' '));
     requireKnownAlias(alias);
+    const remoteCommand = opts.stdin ? await readStdinText()
+      : opts.command !== undefined ? String(opts.command) : opts._.slice(1).join(' ');
     return execCommand(alias, remoteCommand, opts);
   }
 
@@ -1864,6 +2207,16 @@ async function main() {
 }
 
 main().catch((err) => {
+  const startupErrorFile = process.env.LEARN_SSH_DAEMON_STARTUP_ERROR_FILE;
+  if (process.argv[2] === 'daemon' && process.argv[3] === 'serve'
+    && startupErrorFile && path.dirname(path.resolve(startupErrorFile)) === DATA_DIR
+    && fs.existsSync(startupErrorFile)) {
+    try {
+      fs.writeFileSync(startupErrorFile, `${err.message}\n`, { mode: 0o600 });
+    } catch {
+      // The parent still has a generic startup error if this diagnostic cannot be written.
+    }
+  }
   if (argvWantsJson(process.argv.slice(2))) {
     printJson({ success: false, error: err.message });
   } else {

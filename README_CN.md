@@ -120,6 +120,8 @@ PowerShell 的 `$env:` 赋值只在当前终端会话中有效。如需在新终
 
 ## 常用命令
 
+可通过已安装的启动器运行 `learn-ssh <command> --help` 查看各命令的参数说明。
+
 列出别名：
 
 ```powershell
@@ -164,6 +166,8 @@ PowerShell 的 `$env:` 赋值只在当前终端会话中有效。如需在新终
   --remote-host 127.0.0.1 `
   --remote-port 5432
 ```
+
+`tunnel --json` 的标准输出是逐行 JSON 事件流，每行一个对象，`event` 分别为 `started`、`forward-error` 或 `closed`。
 
 ## 安全模型
 

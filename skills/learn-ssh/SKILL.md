@@ -189,6 +189,8 @@ The CLI prints concise human-readable output by default. Add `--json` when autom
 .\.learn-ssh\bin\learn-ssh.cmd exec prod-web-1 --json -- "hostname"
 ```
 
+Use `<command> --help` for command-specific options. `tunnel --json` emits a JSON Lines event stream with `started`, `forward-error`, and `closed` events, one object per line.
+
 For `exec` JSON output, inspect:
 
 - `success`

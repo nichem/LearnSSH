@@ -120,6 +120,8 @@ Temporary scripts, logs, archives, and intermediate downloads belong in the task
 
 ## Common Commands
 
+Use `learn-ssh <command> --help` (through the installed launcher) for command-specific options.
+
 List aliases:
 
 ```powershell
@@ -164,6 +166,8 @@ Start a local tunnel:
   --remote-host 127.0.0.1 `
   --remote-port 5432
 ```
+
+With `tunnel --json`, stdout is a JSON Lines event stream: one object per line with `started`, `forward-error`, or `closed` as its `event` value.
 
 ## Safety Model
 

@@ -69,13 +69,13 @@ Options:
 }
 
 function parseArgs(argv) {
+  if (argv.slice(2).some((arg) => arg === '--help' || arg === '-h')) {
+    usage();
+    process.exit(0);
+  }
   const opts = { force: false, bin: true, agents: null, all: false, target: null, scope: "project" };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--help" || arg === "-h") {
-      usage();
-      process.exit(0);
-    }
     if (arg === "--force") {
       opts.force = true;
       continue;
@@ -89,17 +89,17 @@ function parseArgs(argv) {
       continue;
     }
     if (arg === "--agents") {
-      if (i + 1 >= argv.length) throw new Error("Missing value for --agents");
+      if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) throw new Error("Missing value for --agents");
       opts.agents = argv[++i].split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
       continue;
     }
     if (arg === "--target") {
-      if (i + 1 >= argv.length) throw new Error("Missing value for --target");
+      if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) throw new Error("Missing value for --target");
       opts.target = argv[++i];
       continue;
     }
     if (arg === "--scope") {
-      if (i + 1 >= argv.length) throw new Error("Missing value for --scope");
+      if (i + 1 >= argv.length || argv[i + 1].startsWith('--')) throw new Error("Missing value for --scope");
       opts.scope = argv[++i].toLowerCase();
       if (opts.scope !== "project" && opts.scope !== "user") {
         throw new Error(`Invalid scope: ${opts.scope}. Valid: project, user`);
