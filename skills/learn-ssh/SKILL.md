@@ -18,7 +18,9 @@ Use the bundled Node.js CLI for every SSH operation. The model must only work wi
 - Treat `config.json` as non-secret metadata and `vault.json` as off-limits encrypted secret storage.
 - Before the first remote operation on an alias in each task, read `./.learn-ssh/servers/<alias>/AGENTS.md`; create it if missing.
 - When the user asks to record server information, update that server's `AGENTS.md`. You may also record durable operational knowledge that will help future work without asking first. Preserve existing notes, timestamp information that may become stale, and never record secrets.
-- Never place locally generated SSH-operation artifacts in the project root. Put temporary scripts, command files, archives, logs, and intermediate downloads under a unique `./.learn-ssh/servers/<alias>/work/<task-id>/` directory.
+- Unless the user explicitly selects another local destination, create new server-bound workspaces and SSH-operation artifacts only under `./.learn-ssh/servers/<alias>/`. A request to edit, run, or upload code locally does not by itself select the project root.
+- Put temporary scripts, command files, archives, logs, and intermediate downloads under a unique `./.learn-ssh/servers/<alias>/work/<task-id>/` directory.
+- Keep server-bound files retained across tasks -- including source code edited and run locally before upload, deployment files, and long-lived archives -- under `./.learn-ssh/servers/<alias>/projects/`, outside the disposable `work/` directory. Follow an explicit user-selected local destination, including the project root; ask the user when the intended location is unclear.
 - Prefer `exec --stdin` when a multi-line remote command does not require a reusable local file. When a local work directory is needed, remove only its task directory after the operation, including after failure; retain it only when the user requested the files or it is needed for troubleshooting, and report the retained path. Never remove the server-level `AGENTS.md` during cleanup.
 - Respect an explicit user-selected local destination for a final download or other deliverable. Do not relocate it into the temporary work directory or delete it during cleanup.
 
@@ -50,7 +52,7 @@ The installer installs the CLI and its Node.js dependencies under `./.learn-ssh/
 node ./.learn-ssh/scripts/ssh-node-ops.mjs list
 ```
 
-The installer automatically initializes encrypted storage during the `npx` install command; do not ask the user to run a separate `init` step. LearnSSH stores all data **per-project** under `./.learn-ssh/` in the current working directory and adds `.learn-ssh/` to the project `.gitignore`. It also creates `./.learn-ssh/servers/` and maintains a marked LearnSSH instruction block in the project-root `AGENTS.md` without replacing unrelated content. To override the data storage location, keep `LEARN_SSH_HOME` set during installation and every later CLI invocation.
+The installer automatically initializes encrypted storage during the `npx` install command; do not ask the user to run a separate `init` step. LearnSSH stores all data **per-project** under `./.learn-ssh/` in the current working directory and adds `.learn-ssh/` to the project `.gitignore`. It also creates `./.learn-ssh/servers/` and maintains a marked LearnSSH instruction block in the project-root `AGENTS.md` without replacing unrelated content.
 
 On macOS, initialization stores the encryption master key in Keychain (scoped per project). On other platforms it falls back to a mode-600 local key file unless the user provides another key through `SSH_NODE_OPS_MASTER_KEY`.
 
@@ -62,7 +64,7 @@ When the skill is first used, guide the user through configuration. The user mus
 2. Add one alias per server in the user's terminal. The user types secrets only into the terminal prompt.
 3. Confirm aliases with `list`, then use aliases for all later operations.
 
-All commands resolve storage from the current working directory, so always run LearnSSH commands from the project root. Override with the `LEARN_SSH_HOME` environment variable if needed; it must remain set for every command, and a PowerShell `$env:` assignment applies only to that terminal session. Use the syntax of the active shell (`$env:LEARN_SSH_HOME = "D:\path\to\dir"` in PowerShell or `LEARN_SSH_HOME=/path/to/dir` in a POSIX shell).
+All commands resolve storage from the current working directory, so always run LearnSSH commands from the project root.
 
 Aliases may use Unicode letters or digits, including Chinese names, plus `.`, `_`, and `-`. They must be safe cross-platform directory names: aliases cannot be `.`, `..`, end with `.`, use Windows reserved names, or differ from an existing alias only by normalized letter case.
 

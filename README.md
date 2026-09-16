@@ -66,14 +66,6 @@ Use `--agents agents` to install only the shared `.agents/skills/` copy. `--targ
 
 The preceding `npx` install command automatically initializes project-local encrypted storage, creates `.learn-ssh\` and `.learn-ssh\servers\` in the current directory, and adds `.learn-ssh\` to `.gitignore`. You do not need to run `init` separately.
 
-To override the data storage location, keep `LEARN_SSH_HOME` set both while running the `npx` installer and whenever you later run LearnSSH:
-
-```powershell
-$env:LEARN_SSH_HOME = "D:\path\to\learn-ssh-data"
-```
-
-PowerShell `$env:` assignments apply only to the current terminal session. If you want the override to survive new terminals, configure `LEARN_SSH_HOME` as a persistent user or system environment variable.
-
 Server aliases may use Unicode letters or digits, including Chinese names, plus `.`, `_`, and `-`. They must be safe cross-platform directory names: aliases cannot be `.`, `..`, end with `.`, use Windows reserved names, or differ from an existing alias only by normalized letter case.
 
 Add a password-based server alias:
@@ -112,11 +104,14 @@ Local task artifacts and durable notes are isolated by server:
 `-- servers/
     `-- <alias>/
         |-- AGENTS.md
-        `-- work/
-            `-- <task-id>/
+        |-- work/
+        |   `-- <task-id>/
+        `-- projects/
 ```
 
-Temporary scripts, logs, archives, and intermediate downloads belong in the task directory. Cleanup removes only that task directory and preserves the server-level `AGENTS.md`. Final downloads with an explicit user-selected destination still go to that destination.
+Unless the user explicitly selects another local destination, new server-bound workspaces and SSH-operation artifacts belong under `servers/<alias>/`; a request to edit, run, or upload code locally does not itself select the project root. Temporary scripts, logs, archives, and intermediate downloads go in the task directory. Cleanup removes only that task directory and preserves the server-level `AGENTS.md`. Final downloads with an explicit user-selected destination still go to that destination.
+
+Server-bound files retained across tasks -- including source code edited and run locally before upload, deployment files, and long-lived archives -- go under `servers/<alias>/projects/`, a sibling of the disposable `work/` directory. An explicit user-selected local destination takes precedence, including the project root; ask when the intended location is unclear.
 
 ## Common Commands
 

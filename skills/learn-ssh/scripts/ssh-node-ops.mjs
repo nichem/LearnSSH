@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { StringDecoder } from 'node:string_decoder';
 
 const APP = 'learn-ssh';
-const DATA_DIR = resolveDataDir();
+const DATA_DIR = path.join(process.cwd(), '.learn-ssh');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const VAULT_PATH = path.join(DATA_DIR, 'vault.json');
 const LOCAL_KEY_PATH = path.join(DATA_DIR, 'master.key');
@@ -45,16 +45,6 @@ const KNOWN_OPTIONS = new Set([
   ...Object.values(COMMAND_OPTIONS).flat().map((key) => key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)),
 ]);
 const SECRET_OPTIONS = new Set(['password', 'passphrase', 'private-key', 'privateKey', 'secret']);
-
-function resolveDataDir() {
-  if (process.env.LEARN_SSH_HOME) return path.resolve(process.env.LEARN_SSH_HOME);
-  return path.join(process.cwd(), '.learn-ssh');
-}
-
-function isProjectLocalStorage() {
-  const relative = path.relative(process.cwd(), DATA_DIR);
-  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-}
 
 function keychainService() {
   const projectHash = crypto.createHash('sha256').update(DATA_DIR).digest('hex').slice(0, 12);
@@ -636,7 +626,7 @@ function loadConfig() {
 function noServersMessage() {
   return fs.existsSync(CONFIG_PATH)
     ? 'No servers configured.'
-    : `No servers configured: ${CONFIG_PATH} does not exist. Check the current directory or LEARN_SSH_HOME.`;
+    : `No servers configured: ${CONFIG_PATH} does not exist. Run LearnSSH from the project root.`;
 }
 
 function saveConfig(config) {
@@ -962,24 +952,12 @@ async function promptConfirmedSecret(label) {
   return first;
 }
 
-function gitignoreEntryForDataDir() {
-  // Derive the ignore rule from the actual storage location (which honors
-  // LEARN_SSH_HOME), not a hardcoded '.learn-ssh/'. A .gitignore can only cover
-  // paths inside the repo, so skip when DATA_DIR is outside the project root.
-  const rel = path.relative(process.cwd(), DATA_DIR);
-  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-    return null;
-  }
-  return `${rel.split(path.sep).join('/')}/`;
-}
-
 function gitignoreHasEntry(existing, entry) {
   return existing.split(/\r?\n/).some((line) => line.trim() === entry);
 }
 
 function ensureProjectGitignore() {
-  const entry = gitignoreEntryForDataDir();
-  if (!entry) return { entry: null, added: false };
+  const entry = '.learn-ssh/';
   const gitignorePath = path.join(process.cwd(), '.gitignore');
   let existing = '';
   if (fs.existsSync(gitignorePath)) {
@@ -1003,7 +981,7 @@ async function initCommand(opts) {
     configPath: CONFIG_PATH,
     vaultPath: VAULT_PATH,
     masterKeyProvider: provider,
-    projectLocal: isProjectLocalStorage(),
+    projectLocal: true,
     gitignoreEntry: gitignore.entry,
     gitignoreAdded: gitignore.added,
   };
@@ -1014,14 +992,10 @@ async function initCommand(opts) {
       `config: ${value.configPath}`,
       `vault: ${value.vaultPath}`,
     ];
-    if (value.gitignoreEntry) {
-      const gitignorePath = path.join(process.cwd(), '.gitignore');
-      lines.push(value.gitignoreAdded
-        ? `gitignore: added ${value.gitignoreEntry} to ${gitignorePath}`
-        : `gitignore: ${gitignorePath} already contains ${value.gitignoreEntry}`);
-    } else {
-      lines.push('gitignore: storage is outside the project root; add an ignore rule manually if it is tracked by git');
-    }
+    const gitignorePath = path.join(process.cwd(), '.gitignore');
+    lines.push(value.gitignoreAdded
+      ? `gitignore: added ${value.gitignoreEntry} to ${gitignorePath}`
+      : `gitignore: ${gitignorePath} already contains ${value.gitignoreEntry}`);
     return lines.join('\n');
   });
 }
@@ -1406,7 +1380,6 @@ function spawnDaemonViaStartProcess(args, startupErrorFile) {
   const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
   const argLine = args.map((a) => `"${String(a).replace(/"/g, '\\"')}"`).join(' ');
   const script = [
-    `$env:LEARN_SSH_HOME = ${psQuote(DATA_DIR)}`,
     `$env:LEARN_SSH_DAEMON_STARTUP_ERROR_FILE = ${psQuote(startupErrorFile)}`,
     `$p = Start-Process -FilePath ${psQuote(process.execPath)} -ArgumentList ${psQuote(argLine)} -WorkingDirectory ${psQuote(path.dirname(DATA_DIR))} -WindowStyle Hidden -PassThru`,
     'if ($null -eq $p) { exit 1 }',
@@ -1438,7 +1411,7 @@ function spawnDetachedDaemon(args, startupErrorFile) {
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, LEARN_SSH_HOME: DATA_DIR, LEARN_SSH_DAEMON_STARTUP_ERROR_FILE: startupErrorFile },
+    env: { ...process.env, LEARN_SSH_DAEMON_STARTUP_ERROR_FILE: startupErrorFile },
     cwd: path.dirname(DATA_DIR),
     windowsHide: true,
   });
@@ -2134,7 +2107,7 @@ async function pathsCommand(opts) {
     vaultPath: VAULT_PATH,
     localKeyPath: LOCAL_KEY_PATH,
     masterKeyProvider: provider,
-    projectLocal: isProjectLocalStorage(),
+    projectLocal: true,
   };
   printResult(opts, result, (value) => [
     `script: ${value.scriptDir}`,

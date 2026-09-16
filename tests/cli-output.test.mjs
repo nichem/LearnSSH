@@ -13,11 +13,13 @@ const INSTALLER = path.join(ROOT, 'bin', 'install.mjs');
 
 function withStorage(callback) {
   const tempRoot = fs.realpathSync(os.tmpdir());
-  const storage = fs.mkdtempSync(path.join(tempRoot, 'learn-ssh-cli-test-'));
+  const projectRoot = fs.mkdtempSync(path.join(tempRoot, 'learn-ssh-cli-test-'));
+  const storage = path.join(projectRoot, '.learn-ssh');
+  fs.mkdirSync(storage);
   try {
     return callback(storage);
   } finally {
-    const resolved = fs.realpathSync(storage);
+    const resolved = fs.realpathSync(projectRoot);
     assert.equal(path.dirname(resolved), tempRoot);
     assert.match(path.basename(resolved), /^learn-ssh-cli-test-/);
     fs.rmSync(resolved, { recursive: true, force: true });
@@ -26,11 +28,11 @@ function withStorage(callback) {
 
 async function withStorageAsync(callback) {
   const tempRoot = fs.realpathSync(os.tmpdir());
-  const storage = fs.mkdtempSync(path.join(tempRoot, 'learn-ssh-cli-test-'));
+  const projectRoot = fs.mkdtempSync(path.join(tempRoot, 'learn-ssh-cli-test-'));
   try {
-    return await callback(storage);
+    return await callback(projectRoot);
   } finally {
-    const resolved = fs.realpathSync(storage);
+    const resolved = fs.realpathSync(projectRoot);
     assert.equal(path.dirname(resolved), tempRoot);
     assert.match(path.basename(resolved), /^learn-ssh-cli-test-/);
     fs.rmSync(resolved, { recursive: true, force: true });
@@ -39,8 +41,7 @@ async function withStorageAsync(callback) {
 
 function runCli(storage, args, extra = {}) {
   return spawnSync(process.execPath, [CLI, ...args], {
-    cwd: ROOT,
-    env: { ...process.env, LEARN_SSH_HOME: storage },
+    cwd: path.dirname(storage),
     encoding: 'utf8',
     timeout: 15000,
     ...extra,
@@ -151,14 +152,34 @@ test('help topics and installer help reject or explain the right input', () => w
   assert.match(installer.stdout, /^LearnSSH installer/);
 }));
 
-test('paths reports external storage accurately', () => withStorage((storage) => {
-  const result = runCli(storage, ['paths', '--json']);
+test('paths stays project-local even when LEARN_SSH_HOME is set', () => withStorage((storage) => {
+  const result = runCli(storage, ['paths', '--json'], {
+    env: { ...process.env, LEARN_SSH_HOME: path.join(path.dirname(storage), 'elsewhere') },
+  });
   assert.equal(result.status, 0);
-  assert.equal(JSON.parse(result.stdout).projectLocal, false);
+  const paths = JSON.parse(result.stdout);
+  assert.equal(paths.storageDir, storage);
+  assert.equal(paths.projectLocal, true);
+}));
+
+test('init ignores LEARN_SSH_HOME and creates storage in the project', () => withStorage((storage) => {
+  const projectRoot = path.dirname(storage);
+  const elsewhere = path.join(projectRoot, 'elsewhere');
+  const result = runCli(storage, ['init', '--local-key', '--json'], {
+    env: { ...process.env, LEARN_SSH_HOME: elsewhere },
+  });
+  assert.equal(result.status, 0);
+  const initialized = JSON.parse(result.stdout);
+  assert.equal(initialized.storageDir, storage);
+  assert.equal(initialized.gitignoreEntry, '.learn-ssh/');
+  assert.equal(initialized.projectLocal, true);
+  assert.equal(fs.existsSync(path.join(storage, 'config.json')), true);
+  assert.equal(fs.existsSync(elsewhere), false);
+  assert.match(fs.readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'), /^\.learn-ssh\/$/m);
 }));
 
 test('tunnel JSON output is a line-delimited event stream', () => withStorageAsync(async (root) => {
-  const storage = path.join(root, 'data');
+  const storage = path.join(root, '.learn-ssh');
   fs.mkdirSync(storage);
   writeAgentAlias(storage);
   const cliCopy = path.join(root, 'ssh-node-ops.mjs');
@@ -180,8 +201,7 @@ export class Client extends EventEmitter {
   const result = spawnSync(process.execPath, [
     cliCopy, 'tunnel', 'demo', '--local-port', String(port), '--remote-port', '5432', '--idle-timeout', '0.2', '--json',
   ], {
-    cwd: ROOT,
-    env: { ...process.env, LEARN_SSH_HOME: storage },
+    cwd: root,
     encoding: 'utf8',
     timeout: 5000,
   });
