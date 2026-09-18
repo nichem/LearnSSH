@@ -228,7 +228,7 @@ test('daemon startup includes the child failure reason', () => withStorage((stor
 }));
 
 test('piped stdin is normalized (BOM and CRLF) before reaching the remote exec', () => withStorageAsync(async (root) => {
-  const storage = path.join(root, 'data');
+  const storage = path.join(root, '.learn-ssh');
   fs.mkdirSync(storage);
   writeAgentAlias(storage);
   const cliCopy = path.join(root, 'ssh-node-ops.mjs');
@@ -258,11 +258,10 @@ export class Client extends EventEmitter {
 
   const env = {
     ...process.env,
-    LEARN_SSH_HOME: storage,
     LEARN_SSH_TEST_EXEC_CAPTURE: captureFile,
   };
   const result = spawnSync(process.execPath, [cliCopy, 'exec', 'demo', '--stdin', '--no-daemon'], {
-    cwd: ROOT,
+    cwd: root,
     env,
     input: '\uFEFF\uFEFFecho hi\r\necho bye\r\n',
     encoding: 'utf8',
@@ -282,7 +281,7 @@ export class Client extends EventEmitter {
     ].join('\n');
     const psResult = spawnSync('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(psScript, 'utf16le').toString('base64'),
-    ], { cwd: ROOT, env, encoding: 'utf8', timeout: 15000 });
+    ], { cwd: root, env, encoding: 'utf8', timeout: 15000 });
     assert.equal(psResult.error, undefined);
     assert.equal(psResult.status, 0, psResult.stderr);
     assert.equal(fs.readFileSync(captureFile, 'utf8'), "bash -lic 'echo café'");
