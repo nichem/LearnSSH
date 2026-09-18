@@ -759,7 +759,12 @@ function readStdinText() {
     process.stdin.on('data', (chunk) => {
       data += chunk;
     });
-    process.stdin.on('end', () => resolve(data.replace(/\s+$/u, '')));
+    process.stdin.on('end', () => {
+      // Windows shells pipe text with a leading UTF-8 BOM and CRLF line
+      // endings; normalize here so remote scripts run clean.
+      const normalized = data.replace(/^\uFEFF+/u, '').replace(/\r\n/g, '\n');
+      resolve(normalized.replace(/\s+$/u, ''));
+    });
     process.stdin.on('error', reject);
   });
 }
