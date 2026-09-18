@@ -179,6 +179,7 @@ Usage:
   learn-ssh exec <alias> [options] --stdin
 
 Run a remote command. By default, the connection is reused and the command runs through bash -lic.
+Windows PowerShell 5.1: set $OutputEncoding = New-Object System.Text.UTF8Encoding($false) before piping to --stdin.
 
 Options:
   --stdin                   Read the remote command from standard input
@@ -760,8 +761,9 @@ function readStdinText() {
       data += chunk;
     });
     process.stdin.on('end', () => {
-      // Windows shells pipe text with a leading UTF-8 BOM and CRLF line
-      // endings; normalize here so remote scripts run clean.
+      // Normalize a leading UTF-8 BOM and CRLF after the source shell sends
+      // UTF-8. PowerShell 5.1 needs $OutputEncoding set before piping: its
+      // default ASCII encoding turns a BOM into '?' before stdin receives it.
       const normalized = data.replace(/^\uFEFF+/u, '').replace(/\r\n/g, '\n');
       resolve(normalized.replace(/\s+$/u, ''));
     });
@@ -1505,14 +1507,15 @@ function wrapLoginShell(command) {
   return `bash -lic '${escaped}'`;
 }
 
-// `bash -lic` under a non-tty SSH exec prints two harmless startup warnings to
+// `bash -lic` under a non-tty SSH exec prints harmless job-control warnings to
 // stderr ("cannot set terminal process group" / "no job control in this
-// shell"). Strip them so they don't pollute every exec result.
+// shell" / "tcsetattr: Inappropriate ioctl for device"). Strip them so they
+// don't pollute every exec result.
 function filterLoginShellNoise(stderr) {
   if (!stderr) return stderr;
   const filtered = stderr
     .split('\n')
-    .filter((line) => !/cannot set terminal process group|no job control in this shell/u.test(line))
+    .filter((line) => !/cannot set terminal process group|no job control in this shell|tcsetattr: Inappropriate ioctl for device/u.test(line))
     .join('\n');
   return filtered.replace(/\n+$/u, '');
 }

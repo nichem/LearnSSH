@@ -62,6 +62,22 @@ npx --yes github:nichem/LearnSSH --scope user         # user dirs (~/.agents/ski
 
 Use `--agents agents` to install only the shared `.agents/skills/` copy. `--target` makes the installer work with any AI tool that loads the Agent Skills (`SKILL.md`) format, even before it is added to the registry. Adding a new agent to the registry is a one-line change in `agents.json` — no installer code changes needed.
 
+### Local Development Install
+
+To install from a local checkout (for development, or before a fix is pushed), run the bundled installer directly from the repository root, with the target project as the current directory:
+
+```bash
+node <path-to-LearnSSH>/bin/install.mjs --force
+```
+
+The CLI and skill files are always copied from the checkout, so uncommitted local changes take effect. `--force` replaces any existing skill installation.
+
+### Upgrading
+
+After the CLI is replaced in place (for example, by re-running the installer), an existing daemon continues using its previous build until it exits. To use the new build immediately, wait for any running commands to finish, then run `learn-ssh daemon stop <alias>`. The next `exec` starts a daemon with the new build.
+
+When piping command text from Windows PowerShell 5.1, set `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)` before the pipe. Its default ASCII encoding replaces a BOM and other non-ASCII characters with `?` before the CLI can read them. The skill's `exec --stdin` example includes this setting.
+
 ## First-Time Setup
 
 The preceding `npx` install command automatically initializes project-local encrypted storage, creates `.learn-ssh\` and `.learn-ssh\servers\` in the current directory, and adds `.learn-ssh\` to `.gitignore`. You do not need to run `init` separately.
@@ -199,6 +215,12 @@ Check the CLI syntax:
 
 ```powershell
 node --check skills\learn-ssh\scripts\ssh-node-ops.mjs
+```
+
+Run the test suite:
+
+```powershell
+npm test
 ```
 
 ## Packaging

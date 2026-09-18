@@ -226,3 +226,65 @@ test('daemon startup includes the child failure reason', () => withStorage((stor
   assert.match(result.stderr, /Missing dependency ssh2|Unsupported auth type/);
   assert.equal(fs.readdirSync(storage).some((name) => name.startsWith('daemon-startup-')), false);
 }));
+
+test('piped stdin is normalized (BOM and CRLF) before reaching the remote exec', () => withStorageAsync(async (root) => {
+  const storage = path.join(root, 'data');
+  fs.mkdirSync(storage);
+  writeAgentAlias(storage);
+  const cliCopy = path.join(root, 'ssh-node-ops.mjs');
+  fs.copyFileSync(CLI, cliCopy);
+  const moduleDir = path.join(root, 'node_modules', 'ssh2');
+  fs.mkdirSync(moduleDir, { recursive: true });
+  fs.writeFileSync(path.join(moduleDir, 'package.json'), JSON.stringify({ name: 'ssh2', type: 'module', main: './index.js' }));
+  const captureFile = path.join(root, 'exec-capture.txt');
+  fs.writeFileSync(path.join(moduleDir, 'index.js'), `import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+export class Client extends EventEmitter {
+  connect() { queueMicrotask(() => this.emit('ready')); }
+  exec(command, callback) {
+    fs.writeFileSync(process.env.LEARN_SSH_TEST_EXEC_CAPTURE, String(command));
+    const stream = new EventEmitter();
+    stream.stderr = new EventEmitter();
+    stream.signal = () => {};
+    process.nextTick(() => callback(null, stream));
+    process.nextTick(() => {
+      stream.emit('exit', 0, undefined);
+      stream.emit('close', 0, undefined);
+    });
+  }
+  end() {}
+}
+`);
+
+  const env = {
+    ...process.env,
+    LEARN_SSH_HOME: storage,
+    LEARN_SSH_TEST_EXEC_CAPTURE: captureFile,
+  };
+  const result = spawnSync(process.execPath, [cliCopy, 'exec', 'demo', '--stdin', '--no-daemon'], {
+    cwd: ROOT,
+    env,
+    input: '\uFEFF\uFEFFecho hi\r\necho bye\r\n',
+    encoding: 'utf8',
+    timeout: 15000,
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(fs.readFileSync(captureFile, 'utf8'), "bash -lic 'echo hi\necho bye'");
+
+  if (process.platform === 'win32') {
+    const psQuote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+    const psScript = [
+      '$OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
+      "$RemoteCommand = [string][char]0xFEFF + 'echo café'",
+      `$RemoteCommand | & ${psQuote(process.execPath)} ${psQuote(cliCopy)} exec demo --stdin --no-daemon`,
+      'if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
+    ].join('\n');
+    const psResult = spawnSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(psScript, 'utf16le').toString('base64'),
+    ], { cwd: ROOT, env, encoding: 'utf8', timeout: 15000 });
+    assert.equal(psResult.error, undefined);
+    assert.equal(psResult.status, 0, psResult.stderr);
+    assert.equal(fs.readFileSync(captureFile, 'utf8'), "bash -lic 'echo café'");
+  }
+}));

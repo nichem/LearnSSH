@@ -1,13 +1,17 @@
 {
   "name": "@learnaihubc/learn-ssh",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Agent-agnostic SSH server operations skill for AI coding tools.",
+  "scripts": {
+    "test": "node --test tests/cli-output.test.mjs"
+  },
   "bin": {
     "learn-ssh": "bin/install.mjs"
   },
   "files": [
     "README.md",
     "README_CN.md",
+    "CHANGELOG.md",
     "LICENSE",
     "agents.json",
     "bin",

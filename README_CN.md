@@ -62,6 +62,22 @@ npx --yes github:nichem/LearnSSH --scope user         # 用户级目录（~/.age
 
 `--agents agents` 可只安装通用 `.agents/skills/` 版本。`--target` 让安装器可以适配任何支持 Agent Skills（`SKILL.md`）格式的 AI 工具，即使它还没进注册表。要支持新 agent，只需在 `agents.json` 里加一条，不用改安装代码。
 
+### 本地开发安装
+
+从本地签出（checkout）安装（用于开发，或修复尚未 push 时）：让目标项目作为当前工作目录，直接运行仓库自带的安装器：
+
+```bash
+node <LearnSSH仓库路径>/bin/install.mjs --force
+```
+
+CLI 与技能文件始终从本地签出复制，未提交的本地改动会直接生效。`--force` 会替换已有的技能安装。
+
+### 升级说明
+
+CLI 被原地替换后（例如重新运行安装器），已有 daemon 会继续使用旧构建，直到自行退出。如需立即使用新构建，请等当前命令执行完，再运行 `learn-ssh daemon stop <alias>`；下一次 `exec` 会启动新 daemon。
+
+从 Windows PowerShell 5.1 通过管道传入命令时，先设置 `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)`。默认的 ASCII 编码会在 CLI 读取前把 BOM 和其他非 ASCII 字符转换成 `?`。技能文件中的 `exec --stdin` 示例已包含这一步。
+
 ## 首次配置
 
 运行前面的 `npx` 安装命令时，安装器会自动初始化项目级加密存储，在当前目录创建 `.learn-ssh\` 和 `.learn-ssh\servers\`，并将 `.learn-ssh\` 加入 `.gitignore`，无需再手动执行 `init`。
@@ -199,6 +215,12 @@ uv run --with pyyaml "$HOME\.codex\skills\.system\skill-creator\scripts\quick_va
 
 ```powershell
 node --check skills\learn-ssh\scripts\ssh-node-ops.mjs
+```
+
+运行测试套件：
+
+```powershell
+npm test
 ```
 
 ## 打包

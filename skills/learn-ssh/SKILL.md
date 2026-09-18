@@ -116,11 +116,12 @@ Execute a command:
 
 `exec` uses a per-alias local daemon by default. If an SSH connection for that alias is already open and has been active within the idle timeout, the CLI reuses it. If no reusable daemon exists, the CLI starts one automatically. The daemon exits after 60 minutes without commands by default. The CLI hard-blocks `rm -rf /` style root deletion; other risky remote commands rely on the host tool permission flow.
 
-By default `exec` wraps the command in `bash -lic`, so the remote shell loads the full login + interactive environment (`~/.bashrc`, `~/.profile`, nvm, uv, sdkman, ...) just like a real SSH login -- tools such as `uv` and `nvm node` are directly usable. Two harmless `bash` startup warnings on stderr are filtered automatically. Pass `--no-login` to run raw in a minimal non-interactive shell (faster, cleaner output, but those tools will not be on `PATH`).
+By default `exec` wraps the command in `bash -lic`, so the remote shell loads the full login + interactive environment (`~/.bashrc`, `~/.profile`, nvm, uv, sdkman, ...) just like a real SSH login -- tools such as `uv` and `nvm node` are directly usable. Harmless `bash` job-control warnings on stderr are filtered automatically. Pass `--no-login` to run raw in a minimal non-interactive shell (faster, cleaner output, but those tools will not be on `PATH`).
 
-For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables. A leading UTF-8 BOM (as added by Windows PowerShell pipes) and CRLF line endings are stripped and normalized to LF automatically, so no manual pre-processing is needed:
+For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables. In Windows PowerShell 5.1, set `$OutputEncoding` to UTF-8 before piping: its ASCII default converts a BOM and other non-ASCII characters to `?` before the CLI can read them. The CLI then strips any leading BOM and normalizes CRLF to LF:
 
 ```powershell
+$OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $RemoteCommand = @'
 set -o pipefail
 . /etc/os-release
