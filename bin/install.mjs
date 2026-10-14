@@ -317,6 +317,7 @@ function ensureGitignoreEntry(projectRoot) {
 
 function renderProjectAgentsBlock() {
   return `${AGENTS_BLOCK_START}
+
 ## LearnSSH Server Context
 
 - Before the first remote operation on a configured server alias in each task, read \`./.learn-ssh/servers/<alias>/AGENTS.md\`. Create it if it does not exist.
@@ -326,6 +327,7 @@ function renderProjectAgentsBlock() {
 - Unless the user explicitly selects another local destination, create new server-bound workspaces and SSH-operation artifacts only under \`./.learn-ssh/servers/<alias>/\`. A request to edit, run, or upload code locally does not by itself select the project root.
 - Put temporary scripts, logs, archives, and intermediate downloads under a unique \`./.learn-ssh/servers/<alias>/work/<task-id>/\` directory. Remove only the task directory when cleaning up and always preserve the server-level \`AGENTS.md\`.
 - Keep server-bound files retained across tasks (such as source code edited and run locally before upload, deployment files, and long-lived archives) in \`./.learn-ssh/servers/<alias>/projects/\`, outside the disposable \`work/\` directory. Follow an explicit user-selected local destination, including the project root; ask when the intended location is unclear.
+
 ${AGENTS_BLOCK_END}`;
 }
 
