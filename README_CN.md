@@ -76,7 +76,7 @@ CLI 与技能文件始终从本地签出复制，未提交的本地改动会直�
 
 CLI 被原地替换后（例如重新运行安装器），已有 daemon 会继续使用旧构建，直到自行退出。如需立即使用新构建，请等当前命令执行完，再运行 `learn-ssh daemon stop <alias>`；下一次 `exec` 会启动新 daemon。
 
-从 Windows PowerShell 5.1 通过管道传入命令时，先设置 `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)`。默认的 ASCII 编码会在 CLI 读取前把 BOM 和其他非 ASCII 字符转换成 `?`。技能文件中的 `exec --stdin` 示例已包含这一步。
+不需要在每条命令前添加编码设置。PowerShell 7 默认使用 UTF-8；仅在通过管道传入命令文本、且当前会话的 `$OutputEncoding` 不是 UTF-8 时（例如 Windows PowerShell 5.1 默认的 ASCII），才在该会话中设置一次 `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)`，避免非 ASCII 字符损坏。已经使用 UTF-8，或没有通过管道向 CLI 传入文本时，直接省略。
 
 ## 首次配置
 

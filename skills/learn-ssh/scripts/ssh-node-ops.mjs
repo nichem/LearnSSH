@@ -179,7 +179,7 @@ Usage:
   learn-ssh exec <alias> [options] --stdin
 
 Run a remote command. By default, the connection is reused and the command runs through bash -lic.
-Windows PowerShell 5.1: set $OutputEncoding = New-Object System.Text.UTF8Encoding($false) before piping to --stdin.
+PowerShell: only if $OutputEncoding is not UTF-8, set $OutputEncoding = New-Object System.Text.UTF8Encoding($false) once per session before piping to --stdin. PowerShell 7 defaults to UTF-8.
 
 Options:
   --stdin                   Read the remote command from standard input
@@ -1536,7 +1536,7 @@ function execRemote(client, command, timeoutMs, options = {}) {
       } catch {
         // Best effort.
       }
-      reject(new Error(`Remote command timed out after ${timeoutMs} ms`));
+      reject(new Error(`Remote command timed out after ${timeoutMs} ms. Use --timeout <seconds> to allow more time (e.g. --timeout ${Math.max(300, Math.ceil(timeoutMs / 1000) * 2)}).`));
     }, timeoutMs) : null;
 
     client.exec(remoteCommand, (err, stream) => {

@@ -118,10 +118,9 @@ Execute a command:
 
 By default `exec` wraps the command in `bash -lic`, so the remote shell loads the full login + interactive environment (`~/.bashrc`, `~/.profile`, nvm, uv, sdkman, ...) just like a real SSH login -- tools such as `uv` and `nvm node` are directly usable. Harmless `bash` job-control warnings on stderr are filtered automatically. Pass `--no-login` to run raw in a minimal non-interactive shell (faster, cleaner output, but those tools will not be on `PATH`).
 
-For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables. In Windows PowerShell 5.1, set `$OutputEncoding` to UTF-8 before piping: its ASCII default converts a BOM and other non-ASCII characters to `?` before the CLI can read them. The CLI then strips any leading BOM and normalizes CRLF to LF:
+For multi-line commands or commands containing `$`, backticks, or many quotes, prefer stdin so the local shell does not expand remote variables. Do not routinely prepend an encoding assignment to commands. PowerShell 7 defaults to UTF-8; if the session already uses UTF-8, no change is needed. Only when piping command text from a session with another encoding (such as Windows PowerShell 5.1's default ASCII), set `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)` once in that session before the pipe to preserve non-ASCII text. The CLI strips any leading BOM and normalizes CRLF to LF:
 
 ```powershell
-$OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $RemoteCommand = @'
 set -o pipefail
 . /etc/os-release

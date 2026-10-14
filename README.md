@@ -76,7 +76,7 @@ The CLI and skill files are always copied from the checkout, so uncommitted loca
 
 After the CLI is replaced in place (for example, by re-running the installer), an existing daemon continues using its previous build until it exits. To use the new build immediately, wait for any running commands to finish, then run `learn-ssh daemon stop <alias>`. The next `exec` starts a daemon with the new build.
 
-When piping command text from Windows PowerShell 5.1, set `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)` before the pipe. Its default ASCII encoding replaces a BOM and other non-ASCII characters with `?` before the CLI can read them. The skill's `exec --stdin` example includes this setting.
+There is no need to prepend an encoding assignment to every command. PowerShell 7 defaults to UTF-8. Only when piping command text from a session whose `$OutputEncoding` is not UTF-8 (such as Windows PowerShell 5.1's default ASCII), set `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)` once in that session before the pipe to preserve non-ASCII text. Skip this setting when the session already uses UTF-8 or the command does not pipe text to the CLI.
 
 ## First-Time Setup
 
